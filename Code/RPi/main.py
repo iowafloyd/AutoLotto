@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-from camera_comm import initialize_camera_serial, send_camera_command, read_camera_line
+from camera_comm import initialize_camera_serial, send_camera_command, read_h7_results
 from csv_output import append_csv_row, initialize_csv_output
 from logging_utils import log_completion, log_error
 from motion_control import actuator_extend, actuator_retract, actuator_stop, gpio_cleanup, motor_run, motor_stop, setup_gpio
@@ -56,7 +56,7 @@ def run_cycle():
     print("Randomization complete. Starting data collection.")
 
     print("Sending 'r' to start recording...")
-    # send_camera_command('r', expected_ack='ACK:r')
+    send_camera_command(ser, 'r', expected_ack='ACK:r')
 
     print("Beginning ball extraction.")
     for _ in range(NUM_STEPS):
@@ -72,11 +72,14 @@ def run_cycle():
             return "stopped", None, None
 
     print("Sending 's' to stop recording...")
-    # send_camera_command('s', expected_ack='ACK:s')
+    send_camera_command(ser, 's', expected_ack='ACK:s')
 
-    # Handshake and camera data collection disabled for testing.
-    print("Skipping camera handshake and data collection for testing.", flush=True)
-    return "ok", None, None
+    print("Examining data collection...", flush=True)
+    count, csv_row = read_h7_results(ser, timeout=10.0)
+    if csv_row:
+        append_csv_row(csv_row)
+
+    return "ok", count, csv_row
 
 
 # ---------------------------
@@ -135,13 +138,15 @@ if __name__ == "__main__":
                 break
 
             if count is None:
-                print(f"Loop {cycle_number} did not receive a valid count.", flush=True)
+                print(f"Loop {cycle_number} ball count: unknown", flush=True)
+                if csv_row:
+                    print(f"Loop {cycle_number} values: {csv_row}", flush=True)
+                print("FAIL", flush=True)
             else:
                 print(f"Loop {cycle_number} ball count: {count}", flush=True)
-                print("PASS" if count == 5 else "FAIL", flush=True)
-
-            if csv_row:
-                print(f"Loop {cycle_number} CSV row: {csv_row}", flush=True)
+                if csv_row:
+                    print(f"Loop {cycle_number} values: {csv_row}", flush=True)
+                print("PASS" if count == NUM_STEPS else "FAIL", flush=True)
 
             print("Cycle complete. Press any key to stop the program.", flush=True)
     except KeyboardInterrupt:

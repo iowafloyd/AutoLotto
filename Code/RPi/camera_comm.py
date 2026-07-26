@@ -62,3 +62,41 @@ def read_camera_line(ser, timeout=10.0):
     if not line:
         return None
     return line.decode('ascii', 'ignore').strip()
+
+
+def read_h7_results(ser, timeout=10.0):
+    if ser is None:
+        return None, None
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        line = read_camera_line(ser, timeout=max(0.0, deadline - time.time()))
+        if line is None:
+            continue
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.lower() in ('r', 's', 'rec'):
+            continue
+        if stripped.lower() == 'e':
+            break
+
+    else:
+        return None, None
+
+    csv_row = None
+    result_deadline = time.time() + 4.0
+    while time.time() < result_deadline and csv_row is None:
+        line = read_camera_line(ser, timeout=max(0.0, result_deadline - time.time()))
+        if line is None:
+            continue
+        if line.startswith('ROW:'):
+            csv_row = line.split(':', 1)[1]
+            break
+
+    if csv_row is None:
+        return None, None
+
+    values = csv_row.split(',')
+    count = max(0, len(values) - 1)
+    return count, csv_row

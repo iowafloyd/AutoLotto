@@ -72,18 +72,8 @@ def handle_command(cmd, usb_handle, recording_state, csv_tags_state):
         # Announce that the H7 is examining the data.
         usb_handle.write("e\n")
 
-        # Send the count of unique values.
-        usb_handle.write("COUNT:" + str(len(unique_values)) + "\n")
-
-        # Send the CSV row of unique values.
-        usb_handle.write("CSV:" + csv_row + "\n")
-
-        # Save the CSV row to a file on the flash filesystem if possible.
-        try:
-            with open("/flash/tag_report.csv", "a") as f:
-                f.write(csv_row + "\n")
-        except Exception:
-            pass
+        # Send the CSV row string to the Pi.
+        usb_handle.write("ROW:" + csv_row + "\n")
 
     return recording_state, csv_tags_state
 
