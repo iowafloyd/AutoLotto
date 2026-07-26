@@ -8,6 +8,8 @@ import select
 import serial
 
 ERROR_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'error.log')
+DESKTOP_RESULTS_DIR = os.path.join(os.path.expanduser('~'), 'Desktop', 'Results')
+CSV_OUTPUT_PATH = None
 
 
 def log_error(message):
@@ -56,13 +58,13 @@ except Exception as exc:
 # ---------------------------
 # PARAMETERS
 # ---------------------------
-FULL_EXTENSION_TIME = 4.0
-FULL_RETRACTION_TIME = 6.0
-BALL_STEP_TIME = 25.0 / 47.0
-BALL_STEP_PAUSE = 0.1
-NUM_STEPS = 5
-MOTOR_RUN_TIME = 7.5
-TOTAL_RUNTIME_SECONDS = 5 * 60  # User-defined total runtime in seconds
+FULL_EXTENSION_TIME = 5.0 # 5 seconds from base to bottom of dome
+FULL_RETRACTION_TIME = 6.0 # 6 seconds from bottom of dome to base ensuring full retraction
+BALL_STEP_TIME = 25.0 / 47.0 # Time for each ball step (25mm ball)
+BALL_STEP_PAUSE = 0.1 # Pause between ball steps to ensure motor has time to stop and settle, camera can capture the ball
+NUM_STEPS = 5 # Number of balls per drawing
+MOTOR_RUN_TIME = 7.5 # Time for motor to run (tweak as needed for more/less randomization)
+TOTAL_RUNTIME_SECONDS = 2 * 60  # Two minutes total runtime for testing purposes
 
 # ---------------------------
 # ACTUATOR CONTROL
@@ -133,15 +135,31 @@ def sleep_interruptible(duration):
 # ---------------------------
 # CAMERA COMMUNICATION
 # ---------------------------
-def send_camera_command(command):
+def send_camera_command(command, expected_ack=None, timeout=1.0):
     if ser is None:
         print("OpenMV not connected; skipping command. \n")
-        return
+        return False
+
     ser.write(command.encode('ascii'))
     ser.flush()
 
+    if expected_ack is None:
+        return True
 
-def read_camera_line(timeout=1.0):
+    ack = read_camera_line(timeout=timeout)
+    if ack is None:
+        print(f"No confirmation received from H7 for command '{command}'.", flush=True)
+        return False
+
+    if ack.upper() != expected_ack.upper():
+        print(f"Unexpected confirmation from H7 for '{command}': {ack}", flush=True)
+        return False
+
+    print(f"H7 acknowledged '{command}' with '{ack}'.", flush=True)
+    return True
+
+
+def read_camera_line(timeout=10.0): # 10-second timeout for reading
     if ser is None:
         return None
     ser.timeout = timeout
@@ -149,6 +167,29 @@ def read_camera_line(timeout=1.0):
     if not line:
         return None
     return line.decode('ascii', 'ignore').strip()
+
+
+def initialize_csv_output():
+    global CSV_OUTPUT_PATH
+    os.makedirs(DESKTOP_RESULTS_DIR, exist_ok=True)
+    timestamp = time.strftime('%Y-%m-%d_%H-%M-%S')
+    CSV_OUTPUT_PATH = os.path.join(DESKTOP_RESULTS_DIR, f'{timestamp}.csv')
+    with open(CSV_OUTPUT_PATH, 'a', encoding='utf-8') as handle:
+        handle.write('')
+    return CSV_OUTPUT_PATH
+
+
+def append_csv_row(csv_row, output_path=None):
+    if not csv_row:
+        return False
+
+    target_path = output_path or CSV_OUTPUT_PATH
+    if target_path is None:
+        return False
+
+    with open(target_path, 'a', encoding='utf-8') as handle:
+        handle.write(csv_row + '\n')
+    return True
 
 
 # ---------------------------
@@ -165,7 +206,7 @@ def run_cycle():
     actuator_extend()
     if sleep_interruptible(FULL_EXTENSION_TIME):
         return "stopped", None, None
-    actuator_stop()
+        actuator_stop()
 
     print("Starting randomization... \n", flush=True)
     motor_run()
@@ -174,8 +215,8 @@ def run_cycle():
     motor_stop()
     print("Randomization complete. Starting data collection. \n")
 
-    # print("Sending 'r' to start recording...")
-    send_camera_command('r')
+    print("Sending 'r' to start recording...")
+    send_camera_command('r', expected_ack='ACK:r')
 
     print("Beginning ball extraction. \n")
     for _ in range(NUM_STEPS):
@@ -190,8 +231,8 @@ def run_cycle():
         if sleep_interruptible(BALL_STEP_PAUSE):
             return "stopped", None, None
 
-    # print("Sending 's' to stop recording...")
-    send_camera_command('s')
+    print("Sending 's' to stop recording...")
+    send_camera_command('s', expected_ack='ACK:s')
 
     e_timestamp = None
     count = None
@@ -221,6 +262,7 @@ def run_cycle():
         count = int(count_line.split(':', 1)[1])
     if csv_line and csv_line.startswith('CSV:'):
         csv_row = csv_line.split(':', 1)[1]
+        append_csv_row(csv_row)
 
     return "ok", count, csv_row
 
@@ -231,7 +273,7 @@ def run_cycle():
 def shutdown_sequence(reason):
     print(f"Stopping all systems ({reason})... \n")
     motor_stop()
-    send_camera_command('s')
+    send_camera_command('s', expected_ack='ACK:s')
 
     print("Full actuator retraction before shutdown \n")
     actuator_retract()
@@ -256,6 +298,7 @@ def cleanup():
 # ---------------------------
 if __name__ == "__main__":
     try:
+        initialize_csv_output()
         enable_raw_mode()
         start_time = time.time()
         reason = None
