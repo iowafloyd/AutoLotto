@@ -50,6 +50,32 @@ def append_csv_row(csv_row, output_path=None):
     return csv_output.append_csv_row(csv_row, output_path=output_path)
 
 
+def collect_tag_values(timeout=2.0, minimum_values=3):
+    collected = []
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if ser.in_waiting:
+            line = ser.readline().decode("ascii", errors="ignore").strip()
+            if not line:
+                continue
+            if line == "READY":
+                continue
+
+            if line.startswith("TAG:"):
+                value = line.split(":", 1)[1].strip()
+            else:
+                value = line
+
+            if value:
+                collected.append(value)
+                print(f"TAG: {value}")
+                if len(collected) >= minimum_values:
+                    break
+        else:
+            time.sleep(0.01)
+    return collected
+
+
 def run_cycle():
     print("Full retraction...", flush=True)
     actuator_retract()
@@ -71,11 +97,19 @@ def run_cycle():
     print("Randomization complete. Starting data collection.")
 
     print("Beginning ball extraction.")
-    for _ in range(NUM_STEPS):
+    for step in range(NUM_STEPS):
         actuator_retract()
         if sleep_interruptible(BALL_STEP_TIME):
             return "stopped", None, None
         actuator_stop()
+
+        collected_values = collect_tag_values(timeout=2.0, minimum_values=3)
+        if not collected_values:
+            print(f"Step {step + 1}: no tag values received")
+        else:
+            csv_value = ",".join(collected_values)
+            print(f"Step {step + 1} values: {csv_value}")
+
         motor_run()
         if sleep_interruptible(1.0):
             return "stopped", None, None
@@ -84,10 +118,8 @@ def run_cycle():
             return "stopped", None, None
 
     print("Examining data collection...", flush=True)
-    count, csv_row = camera_comm.read_h7_results(ser, timeout=20.0)
-    if csv_row:
-        append_csv_row(csv_row)
-
+    count = NUM_STEPS
+    csv_row = None
     return "ok", count, csv_row
 
 

@@ -33,7 +33,7 @@ def main():
         img = sensor.snapshot()
         for tag in img.find_apriltags(families=image.TAG36H11):
             tag_id = tag.id
-            usb.write(f"TAG:{tag_id}\n".encode("ascii"))
+            usb.write(f"{tag_id}\n".encode("ascii"))
             break
 
         pyb.delay(100)
