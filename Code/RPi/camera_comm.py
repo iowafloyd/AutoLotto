@@ -13,7 +13,23 @@ def initialize_camera_serial(path='/dev/ttyACM0', baudrate=115200, timeout=10):
         return None
 
 
-def send_camera_command(ser, command, expected_ack=None, timeout=10.0):
+def send_camera_command(ser_or_command, command=None, expected_ack=None, timeout=10.0):
+    if command is None and isinstance(ser_or_command, str):
+        ser = None
+        command_text = ser_or_command
+    elif command is None:
+        print("OpenMV not connected; skipping command.")
+        return False
+    elif hasattr(ser_or_command, "write") or ser_or_command is None:
+        ser = ser_or_command
+        command_text = command
+    elif isinstance(ser_or_command, str):
+        ser = command
+        command_text = ser_or_command
+    else:
+        ser = ser_or_command
+        command_text = command
+
     if ser is None:
         print("OpenMV not connected; skipping command.")
         return False
@@ -26,7 +42,7 @@ def send_camera_command(ser, command, expected_ack=None, timeout=10.0):
         except Exception:
             pass
 
-    ser.write(command.encode('ascii'))
+    ser.write(command_text.encode('ascii'))
     ser.flush()
 
     if expected_ack is None:
@@ -39,18 +55,18 @@ def send_camera_command(ser, command, expected_ack=None, timeout=10.0):
         if ack is None:
             continue
 
-        if ack == command:
+        if ack == command_text:
             continue
 
         if ack.upper() == expected_ack.upper():
-            print(f"H7 acknowledged '{command}' with '{ack}'.", flush=True)
+            print(f"H7 acknowledged '{command_text}' with '{ack}'.", flush=True)
             return True
 
         if ack.upper().startswith('ACK:'):
             print(f"Unexpected confirmation from H7 for '{command}': {ack}", flush=True)
             return False
 
-    print(f"No confirmation received from H7 for command '{command}'.", flush=True)
+    print(f"No confirmation received from H7 for command '{command_text}'.", flush=True)
     return False
 
 
@@ -80,6 +96,11 @@ def read_h7_results(ser, timeout=10.0):
             continue
         if stripped.lower() == 'e':
             break
+        if stripped.startswith('TAG:'):
+            tag_id = stripped.split(':', 1)[1]
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{timestamp}] H7 detected tag: {tag_id}", flush=True)
+            continue
 
     else:
         return None, None
@@ -93,6 +114,10 @@ def read_h7_results(ser, timeout=10.0):
         if line.startswith('ROW:'):
             csv_row = line.split(':', 1)[1]
             break
+        if line.startswith('COUNT:'):
+            continue
+        if line.startswith('CSV:'):
+            continue
 
     if csv_row is None:
         return None, None

@@ -1,11 +1,34 @@
 import os
 import sys
 import time
-from camera_comm import initialize_camera_serial, send_camera_command, read_h7_results
-from csv_output import append_csv_row, initialize_csv_output
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import csv_output
+import camera_comm
+from camera_comm import initialize_camera_serial, read_h7_results
 from logging_utils import log_completion, log_error
 from motion_control import actuator_extend, actuator_retract, actuator_stop, gpio_cleanup, motor_run, motor_stop, setup_gpio
 from terminal_io import check_for_keypress, enable_raw_mode, restore_terminal, sleep_interruptible
+
+DESKTOP_RESULTS_DIR = os.path.join(os.path.expanduser('~'), 'Desktop', 'Results')
+
+
+def send_camera_command(command, expected_ack=None, timeout=10.0):
+    return camera_comm.send_camera_command(ser, command, expected_ack=expected_ack, timeout=timeout)
+
+
+def initialize_csv_output():
+    global DESKTOP_RESULTS_DIR
+    csv_output.DESKTOP_RESULTS_DIR = DESKTOP_RESULTS_DIR
+    return csv_output.initialize_csv_output()
+
+
+def append_csv_row(csv_row, output_path=None):
+    global DESKTOP_RESULTS_DIR
+    csv_output.DESKTOP_RESULTS_DIR = DESKTOP_RESULTS_DIR
+    return csv_output.append_csv_row(csv_row, output_path=output_path)
 
 
 # ---------------------------
@@ -75,7 +98,7 @@ def run_cycle():
     send_camera_command(ser, 's', expected_ack='ACK:s')
 
     print("Examining data collection...", flush=True)
-    count, csv_row = read_h7_results(ser, timeout=10.0)
+    count, csv_row = read_h7_results(ser, timeout=20.0)
     if csv_row:
         append_csv_row(csv_row)
 

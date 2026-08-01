@@ -31,6 +31,12 @@ def build_timestamp():
     return "%04d-%02d-%02d %02d:%02d:%02d" % (t[0], t[1], t[2], t[3], t[4], t[5])
 
 
+def send_tag_to_pi(usb_handle, tag_id):
+    if usb_handle is None:
+        return
+    usb_handle.write(f"TAG:{tag_id}\n")
+
+
 def handle_command(cmd, usb_handle, recording_state, csv_tags_state):
     if isinstance(cmd, bytes):
         parsed_cmd = cmd.decode('ascii', 'ignore').strip().lower()
@@ -41,7 +47,7 @@ def handle_command(cmd, usb_handle, recording_state, csv_tags_state):
         recording_state = True
         csv_tags_state = ""
         usb_handle.write("ACK:r\n")
-        usb_handle.write("REC\n")
+        # usb_handle.write("REC\n")
         return recording_state, csv_tags_state
 
     if parsed_cmd == 's':
@@ -68,6 +74,8 @@ def handle_command(cmd, usb_handle, recording_state, csv_tags_state):
             csv_row += "," + value
 
         usb_handle.write("ACK:s\n")
+        usb_handle.write(f"COUNT:{len(unique_values)}\n")
+        usb_handle.write(f"CSV:{csv_row}\n")
 
         # Announce that the H7 is examining the data.
         usb_handle.write("e\n")
@@ -86,12 +94,14 @@ def main():
             if cmd:
                 recording, csv_tags = handle_command(cmd, usb, recording, csv_tags)
 
-        if recording:
-            img = sensor.snapshot()
+        # if recording:
+        #     img = sensor.snapshot()
 
             # Detect AprilTag 36H11 tags in the current frame.
             for tag in img.find_apriltags(families=image.TAG36H11):
-                csv_tags += str(tag.id()) + ","
+                tag_id = tag.id()
+                csv_tags += str(tag_id) + ","
+                send_tag_to_pi(usb, tag_id)
 
         sleep_ms(10)
 

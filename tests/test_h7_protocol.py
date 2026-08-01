@@ -97,6 +97,14 @@ class H7ProtocolTests(unittest.TestCase):
         self.assertTrue(any(write.startswith("COUNT:5") for write in usb.writes))
         self.assertTrue(any(write.startswith("CSV:") for write in usb.writes))
 
+    def test_h7_can_forward_tag_number_to_pi(self):
+        module = self.load_h7_module()
+        usb = FakeUSB()
+
+        module.send_tag_to_pi(usb, 42)
+
+        self.assertIn("TAG:42\n", usb.writes)
+
     def test_pi_requires_ack_before_reporting_success(self):
         stub_gpio = types.ModuleType("RPi")
         stub_gpio_gpio = types.ModuleType("RPi.GPIO")
