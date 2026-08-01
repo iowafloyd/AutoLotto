@@ -1,22 +1,41 @@
 import os
+import select
 import sys
+import termios
 import time
+import tty
 from pathlib import Path
+
+import serial
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import csv_output
 import camera_comm
-from camera_comm import initialize_camera_serial, read_h7_results
-from logging_utils import log_completion, log_error
-from motion_control import actuator_extend, actuator_retract, actuator_stop, gpio_cleanup, motor_run, motor_stop, setup_gpio
+import csv_output
+from logging_utils import log_completion
+from motion_control import (
+    actuator_extend,
+    actuator_retract,
+    actuator_stop,
+    gpio_cleanup,
+    motor_run,
+    motor_stop,
+    setup_gpio,
+)
 from terminal_io import check_for_keypress, enable_raw_mode, restore_terminal, sleep_interruptible
 
-DESKTOP_RESULTS_DIR = os.path.join(os.path.expanduser('~'), 'Desktop', 'Results')
+PORT = "/dev/ttyACM0"
+BAUDRATE = 115200
+TIMEOUT = 0.1
+DESKTOP_RESULTS_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "Results")
 
-
-def send_camera_command(command, expected_ack=None, timeout=10.0):
-    return camera_comm.send_camera_command(ser, command, expected_ack=expected_ack, timeout=timeout)
+FULL_EXTENSION_TIME = 5.0
+FULL_RETRACTION_TIME = 6.0
+BALL_STEP_TIME = 25.0 / 47.0
+BALL_STEP_PAUSE = 0.1
+NUM_STEPS = 5
+MOTOR_RUN_TIME = 7.5
+TOTAL_RUNTIME_SECONDS = 2 * 60
 
 
 def initialize_csv_output():
@@ -31,33 +50,6 @@ def append_csv_row(csv_row, output_path=None):
     return csv_output.append_csv_row(csv_row, output_path=output_path)
 
 
-# ---------------------------
-# GPIO SETUP
-# ---------------------------
-setup_gpio()
-
-# ---------------------------
-# SERIAL SETUP (OpenMV)
-# ---------------------------
-ser = initialize_camera_serial('/dev/ttyACM0', 115200, timeout=10)
-if ser is None:
-    gpio_cleanup()
-    sys.exit(1)
-
-# ---------------------------
-# PARAMETERS
-# ---------------------------
-FULL_EXTENSION_TIME = 5.0 # 5 seconds from base to bottom of dome
-FULL_RETRACTION_TIME = 6.0 # 6 seconds from bottom of dome to base ensuring full retraction
-BALL_STEP_TIME = 25.0 / 47.0 # Time for each ball step (25mm ball)
-BALL_STEP_PAUSE = 0.1 # Pause between ball steps to ensure motor has time to stop and settle, camera can capture the ball
-NUM_STEPS = 5 # Number of balls per drawing
-MOTOR_RUN_TIME = 7.5 # Time for motor to run (tweak as needed for more/less randomization)
-TOTAL_RUNTIME_SECONDS = 2 * 60  # Two minutes total runtime for testing purposes
-
-# ---------------------------
-# MAIN SEQUENCE
-# ---------------------------
 def run_cycle():
     print("Full retraction...", flush=True)
     actuator_retract()
@@ -69,7 +61,7 @@ def run_cycle():
     actuator_extend()
     if sleep_interruptible(FULL_EXTENSION_TIME):
         return "stopped", None, None
-        actuator_stop()
+    actuator_stop()
 
     print("Starting randomization...", flush=True)
     motor_run()
@@ -77,9 +69,6 @@ def run_cycle():
         return "stopped", None, None
     motor_stop()
     print("Randomization complete. Starting data collection.")
-
-    print("Sending 'r' to start recording...")
-    send_camera_command(ser, 'r', expected_ack='ACK:r')
 
     print("Beginning ball extraction.")
     for _ in range(NUM_STEPS):
@@ -94,30 +83,21 @@ def run_cycle():
         if sleep_interruptible(BALL_STEP_PAUSE):
             return "stopped", None, None
 
-    print("Sending 's' to stop recording...")
-    send_camera_command(ser, 's', expected_ack='ACK:s')
-
     print("Examining data collection...", flush=True)
-    count, csv_row = read_h7_results(ser, timeout=20.0)
+    count, csv_row = camera_comm.read_h7_results(ser, timeout=20.0)
     if csv_row:
         append_csv_row(csv_row)
 
     return "ok", count, csv_row
 
 
-# ---------------------------
-# CLEANUP
-# ---------------------------
 def shutdown_sequence(reason):
     print(f"Stopping all systems ({reason})...")
     motor_stop()
-    # send_camera_command('s', expected_ack='ACK:s')
-
     print("Full actuator retraction before shutdown")
     actuator_retract()
     time.sleep(FULL_RETRACTION_TIME)
     actuator_stop()
-
     log_completion(reason)
 
 
@@ -131,25 +111,58 @@ def cleanup():
     print("Clean shutdown.")
 
 
-# ---------------------------
-# ENTRY POINT
-# ---------------------------
-if __name__ == "__main__":
+def main():
+    global ser
     try:
-        initialize_csv_output()
-        enable_raw_mode()
+        ser = serial.Serial(PORT, BAUDRATE, timeout=TIMEOUT)
+    except serial.SerialException as exc:
+        print(f"Unable to open {PORT}: {exc}")
+        sys.exit(1)
+
+    print(f"Serial link opened to {PORT}.")
+    print("Requesting H7 handshake...")
+    ser.write(b"HELLO\n")
+    ser.flush()
+    print("Waiting for H7 confirmation...")
+
+    setup_gpio()
+    initialize_csv_output()
+    enable_raw_mode()
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    tty.setraw(fd)
+
+    try:
         start_time = time.time()
         reason = None
         cycle_number = 0
+        confirmed = False
 
         while True:
-            if time.time() - start_time >= TOTAL_RUNTIME_SECONDS:
-                reason = "total runtime reached"
+            if select.select([sys.stdin], [], [], 0.1)[0]:
+                sys.stdin.read(1)
+                print("Exiting.")
+                reason = "key press"
                 break
 
-            if check_for_keypress():
-                reason = "key press"
-                print("A key was pressed. Stopping the program.", flush=True)
+            if ser.in_waiting:
+                line = ser.readline().decode("ascii", errors="ignore").strip()
+                if not line:
+                    continue
+
+                if line == "READY":
+                    if not confirmed:
+                        print("H7 present.")
+                        confirmed = True
+                elif line.startswith("TAG:"):
+                    tag_number = line.split(":", 1)[1].strip()
+                    print(f"TAG: {tag_number}")
+                else:
+                    print(line)
+
+            if time.time() - start_time >= TOTAL_RUNTIME_SECONDS:
+                reason = "total runtime reached"
                 break
 
             cycle_number += 1
@@ -176,6 +189,11 @@ if __name__ == "__main__":
         reason = "keyboard interrupt"
         print("\nInterrupted by user.")
     finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         if reason is not None:
             shutdown_sequence(reason)
         cleanup()
+
+
+if __name__ == "__main__":
+    main()

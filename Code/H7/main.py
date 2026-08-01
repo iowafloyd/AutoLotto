@@ -1,109 +1,42 @@
-import sensor
 import image
-import time
 import pyb
-import os
-
-
-def sleep_ms(milliseconds):
-    if hasattr(time, "sleep_ms"):
-        time.sleep_ms(milliseconds)
-    else:
-        time.sleep(milliseconds / 1000.0)
-
-
-# Configure the camera for AprilTag detection.
-sensor.reset()
-sensor.set_pixformat(sensor.RGB565)
-sensor.set_framesize(sensor.QVGA)
-sensor.set_auto_gain(False)
-sensor.set_auto_whitebal(False)
-sensor.skip_frames(time=2000)
-
-usb = pyb.USB_VCP()
-
-recording = False
-csv_tags = ""
-
-
-def build_timestamp():
-    t = time.localtime()
-    return "%04d-%02d-%02d %02d:%02d:%02d" % (t[0], t[1], t[2], t[3], t[4], t[5])
-
-
-def send_tag_to_pi(usb_handle, tag_id):
-    if usb_handle is None:
-        return
-    usb_handle.write(f"TAG:{tag_id}\n")
-
-
-def handle_command(cmd, usb_handle, recording_state, csv_tags_state):
-    if isinstance(cmd, bytes):
-        parsed_cmd = cmd.decode('ascii', 'ignore').strip().lower()
-    else:
-        parsed_cmd = str(cmd).strip().lower()
-
-    if parsed_cmd == 'r':
-        recording_state = True
-        csv_tags_state = ""
-        usb_handle.write("ACK:r\n")
-        # usb_handle.write("REC\n")
-        return recording_state, csv_tags_state
-
-    if parsed_cmd == 's':
-        recording_state = False
-
-        # Remove trailing comma from the raw tag list.
-        if csv_tags_state.endswith(','):
-            csv_tags_state = csv_tags_state[:-1]
-
-        # Build the list of unique values.
-        values = []
-        if csv_tags_state:
-            values = csv_tags_state.split(',')
-
-        unique_values = []
-        for value in values:
-            if value not in unique_values:
-                unique_values.append(value)
-
-        # Create the CSV row with timestamp and unique values.
-        timestamp = build_timestamp()
-        csv_row = timestamp
-        for value in unique_values:
-            csv_row += "," + value
-
-        usb_handle.write("ACK:s\n")
-        usb_handle.write(f"COUNT:{len(unique_values)}\n")
-        usb_handle.write(f"CSV:{csv_row}\n")
-
-        # Announce that the H7 is examining the data.
-        usb_handle.write("e\n")
-
-        # Send the CSV row string to the Pi.
-        usb_handle.write("ROW:" + csv_row + "\n")
-
-    return recording_state, csv_tags_state
+import sensor
 
 
 def main():
+    sensor.reset()
+    sensor.set_pixformat(sensor.GRAYSCALE)
+    sensor.set_framesize(sensor.QQVGA)
+    sensor.set_auto_gain(False)
+    sensor.set_auto_whitebal(False)
+    sensor.skip_frames(time=2000)
+
+    usb = pyb.USB_VCP()
+    command_buffer = ""
+
     while True:
-        # Read any command sent over USB from the Raspberry Pi.
-        if usb.isconnected() and usb.any():
-            cmd = usb.read(1)
-            if cmd:
-                recording, csv_tags = handle_command(cmd, usb, recording, csv_tags)
+        if not usb.isconnected():
+            pyb.delay(100)
+            continue
 
-        # if recording:
-        #     img = sensor.snapshot()
+        if usb.any():
+            byte = usb.read(1)
+            if byte:
+                if byte == b"\n":
+                    command = command_buffer.strip().upper()
+                    if command in {"HELLO", "START"}:
+                        usb.write(b"READY\n")
+                    command_buffer = ""
+                else:
+                    command_buffer += byte.decode("ascii", "ignore")
 
-            # Detect AprilTag 36H11 tags in the current frame.
-            for tag in img.find_apriltags(families=image.TAG36H11):
-                tag_id = tag.id()
-                csv_tags += str(tag_id) + ","
-                send_tag_to_pi(usb, tag_id)
+        img = sensor.snapshot()
+        for tag in img.find_apriltags(families=image.TAG36H11):
+            tag_id = tag.id
+            usb.write(f"TAG:{tag_id}\n".encode("ascii"))
+            break
 
-        sleep_ms(10)
+        pyb.delay(100)
 
 
 if __name__ == "__main__":
