@@ -29,12 +29,13 @@ BAUDRATE = 115200
 TIMEOUT = 0.1
 DESKTOP_RESULTS_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "Results")
 
-FULL_EXTENSION_TIME = 5.0
+FULL_EXTENSION_TIME = 4.25 # Actuator extension until platform meets bottom of dome
 FULL_RETRACTION_TIME = 6.0
-BALL_STEP_TIME = 25.0 / 47.0
+BALL_STEP_TIME = 30.0 / 47.0
 BALL_STEP_PAUSE = 0.1
 NUM_STEPS = 5
 MOTOR_RUN_TIME = 7.5
+MOTOR_JOG_TIME = 0.5
 TOTAL_RUNTIME_SECONDS = 2 * 60
 
 
@@ -60,7 +61,7 @@ def clear_serial_input():
             pass
 
 
-def collect_tag_values(timeout=2.0, minimum_values=3):
+def collect_tag_values(timeout=5.0, minimum_values=5): # Pi receives at least 5 values per each retraction
     collected = []
     clear_serial_input()
     deadline = time.time() + timeout
@@ -104,32 +105,48 @@ def run_cycle():
     if sleep_interruptible(MOTOR_RUN_TIME):
         return "stopped", None, None
     motor_stop()
-    print("Randomization complete. Starting data collection.")
 
+    print("Randomization complete. Starting data collection.")
     print("Beginning ball extraction.")
+    cycle_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    cycle_values = []
+
     for step in range(NUM_STEPS):
         actuator_retract()
+        
         if sleep_interruptible(BALL_STEP_TIME):
             return "stopped", None, None
         actuator_stop()
 
-        collected_values = collect_tag_values(timeout=2.0, minimum_values=3)
+        if step == 0:
+            print("Motor jog after first ball retraction...")
+            motor_run()
+            if sleep_interruptible(MOTOR_JOG_TIME):
+                return "stopped", None, None
+            motor_stop()
+
+        collected_values = collect_tag_values(timeout=5.0, minimum_values=5)
         if not collected_values:
             print(f"Step {step + 1}: no tag values received")
         else:
             csv_value = ",".join(collected_values)
             print(f"Step {step + 1} values: {csv_value}")
+            cycle_values.extend(collected_values)
 
         motor_run()
-        if sleep_interruptible(1.0):
+        if sleep_interruptible(1.0): # 1 second of motor run to enable balls to fall down tube
             return "stopped", None, None
         motor_stop()
+
         if sleep_interruptible(BALL_STEP_PAUSE):
             return "stopped", None, None
 
     print("Examining data collection...", flush=True)
     count = NUM_STEPS
-    csv_row = None
+    if cycle_values:
+        csv_row = f"{cycle_timestamp},{','.join(cycle_values)}"
+    else:
+        csv_row = cycle_timestamp
     return "ok", count, csv_row
 
 
@@ -224,6 +241,7 @@ def main():
                 print(f"Loop {cycle_number} ball count: {count}", flush=True)
                 if csv_row:
                     print(f"Loop {cycle_number} values: {csv_row}", flush=True)
+                    append_csv_row(csv_row)
                 print("PASS" if count == NUM_STEPS else "FAIL", flush=True)
 
             print("Cycle complete. Press any key to stop the program.", flush=True)

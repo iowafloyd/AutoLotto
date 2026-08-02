@@ -2,6 +2,7 @@ import importlib.util
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
@@ -230,6 +231,86 @@ class H7ProtocolTests(unittest.TestCase):
             self.assertTrue(module.append_csv_row("2024-01-01,1,2,3,4,5", output_path))
             with open(output_path, "r", encoding="utf-8") as handle:
                 self.assertEqual(handle.read(), "2024-01-01,1,2,3,4,5\n")
+
+    def test_pi_generates_timestamped_csv_row_for_loop(self):
+        stub_gpio = types.ModuleType("RPi")
+        stub_gpio_gpio = types.ModuleType("RPi.GPIO")
+
+        class DummyGPIO:
+            BCM = "BCM"
+            OUT = "OUT"
+            HIGH = 1
+            LOW = 0
+
+            def setmode(self, *args, **kwargs):
+                pass
+
+            def setup(self, *args, **kwargs):
+                pass
+
+            def output(self, *args, **kwargs):
+                pass
+
+            def cleanup(self):
+                pass
+
+        stub_gpio_gpio.setmode = DummyGPIO().setmode
+        stub_gpio_gpio.setup = DummyGPIO().setup
+        stub_gpio_gpio.output = DummyGPIO().output
+        stub_gpio_gpio.cleanup = DummyGPIO().cleanup
+        stub_gpio_gpio.BCM = DummyGPIO.BCM
+        stub_gpio_gpio.OUT = DummyGPIO.OUT
+        stub_gpio_gpio.HIGH = DummyGPIO.HIGH
+        stub_gpio_gpio.LOW = DummyGPIO.LOW
+        stub_gpio.GPIO = stub_gpio_gpio
+        sys.modules["RPi"] = stub_gpio
+        sys.modules["RPi.GPIO"] = stub_gpio_gpio
+
+        stub_serial = types.ModuleType("serial")
+        stub_serial.Serial = lambda *args, **kwargs: FakeSerial([b"ACK:r\n"])
+        sys.modules["serial"] = stub_serial
+
+        stub_tty = types.ModuleType("tty")
+        stub_tty.setraw = lambda *args, **kwargs: None
+        sys.modules["tty"] = stub_tty
+
+        stub_termios = types.ModuleType("termios")
+        stub_termios.tcgetattr = lambda *args, **kwargs: None
+        stub_termios.tcsetattr = lambda *args, **kwargs: None
+        stub_termios.TCSADRAIN = 0
+        sys.modules["termios"] = stub_termios
+
+        stub_select = types.ModuleType("select")
+        stub_select.select = lambda *args, **kwargs: ([], [], [])
+        sys.modules["select"] = stub_select
+
+        spec = importlib.util.spec_from_file_location("pi_main", ROOT / "Code" / "RPi" / "main.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        module.actuator_retract = lambda: None
+        module.actuator_stop = lambda: None
+        module.actuator_extend = lambda: None
+        module.motor_run = lambda: None
+        module.motor_stop = lambda: None
+        module.collect_tag_values = lambda timeout=5.0, minimum_values=5: ["1", "2", "3", "4", "5"]
+        module.sleep_interruptible = lambda duration: False
+
+        status, count, csv_row = module.run_cycle()
+        self.assertEqual(status, "ok")
+        self.assertEqual(count, module.NUM_STEPS)
+        self.assertIsNotNone(csv_row)
+
+        timestamp_str, values_str = csv_row.split(",", 1)
+        time.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+        expected_values = ",".join(["1", "2", "3", "4", "5"] * module.NUM_STEPS)
+        self.assertEqual(values_str, expected_values)
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            output_path = os.path.join(tempdir, "test.csv")
+            self.assertTrue(module.append_csv_row(csv_row, output_path))
+            with open(output_path, "r", encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), csv_row + "\n")
 
 
 if __name__ == "__main__":
