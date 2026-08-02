@@ -50,8 +50,19 @@ def append_csv_row(csv_row, output_path=None):
     return csv_output.append_csv_row(csv_row, output_path=output_path)
 
 
+def clear_serial_input():
+    try:
+        ser.reset_input_buffer()
+    except Exception:
+        try:
+            ser.flushInput()
+        except Exception:
+            pass
+
+
 def collect_tag_values(timeout=2.0, minimum_values=3):
     collected = []
+    clear_serial_input()
     deadline = time.time() + timeout
     while time.time() < deadline:
         if ser.in_waiting:
@@ -68,7 +79,6 @@ def collect_tag_values(timeout=2.0, minimum_values=3):
 
             if value:
                 collected.append(value)
-                print(f"TAG: {value}")
                 if len(collected) >= minimum_values:
                     break
         else:
