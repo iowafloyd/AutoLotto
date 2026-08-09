@@ -29,14 +29,14 @@ BAUDRATE = 115200
 TIMEOUT = 0.1
 DESKTOP_RESULTS_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "Results")
 
-FULL_EXTENSION_TIME = 4.25 # Actuator extension until platform meets bottom of dome
+FULL_EXTENSION_TIME = 5.0 # Actuator extension until platform meets bottom of dome
 FULL_RETRACTION_TIME = 6.0
 BALL_STEP_TIME = 30.0 / 47.0
-BALL_STEP_PAUSE = 0.1
+BALL_STEP_PAUSE = 0.2
 NUM_STEPS = 5
 MOTOR_RUN_TIME = 7.5
-MOTOR_JOG_TIME = 0.5
-TOTAL_RUNTIME_SECONDS = 2 * 60
+MOTOR_JOG_TIME = 1.5
+TOTAL_RUNTIME_SECONDS = 10 * 60
 
 
 def initialize_csv_output():
@@ -118,12 +118,18 @@ def run_cycle():
             return "stopped", None, None
         actuator_stop()
 
-        if step == 0:
-            print("Motor jog after first ball retraction...")
-            motor_run()
-            if sleep_interruptible(MOTOR_JOG_TIME):
-                return "stopped", None, None
-            motor_stop()
+        # 1 second of motor run to allow ball drop
+        motor_run()
+        if sleep_interruptible(1.0):
+            return "stopped", None, None
+        motor_stop()
+
+#        if step == 0:
+#            print("Motor jog after first ball retraction...")
+#            motor_run()
+#            if sleep_interruptible(MOTOR_JOG_TIME):
+#                return "stopped", None, None
+#            motor_stop()
 
         collected_values = collect_tag_values(timeout=5.0, minimum_values=5)
         if not collected_values:
@@ -132,11 +138,6 @@ def run_cycle():
             csv_value = ",".join(collected_values)
             print(f"Step {step + 1} values: {csv_value}")
             cycle_values.extend(collected_values)
-
-        motor_run()
-        if sleep_interruptible(1.0): # 1 second of motor run to enable balls to fall down tube
-            return "stopped", None, None
-        motor_stop()
 
         if sleep_interruptible(BALL_STEP_PAUSE):
             return "stopped", None, None
