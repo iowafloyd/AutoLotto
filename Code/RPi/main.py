@@ -36,7 +36,7 @@ BALL_STEP_PAUSE = 0.2
 NUM_STEPS = 5
 MOTOR_RUN_TIME = 7.5
 MOTOR_JOG_TIME = 1.5
-TOTAL_RUNTIME_SECONDS = 10 * 60
+TOTAL_RUNTIME_SECONDS = 30 * 60
 
 
 def initialize_csv_output():
@@ -124,14 +124,26 @@ def run_cycle():
             return "stopped", None, None
         motor_stop()
 
-#        if step == 0:
-#            print("Motor jog after first ball retraction...")
-#            motor_run()
-#            if sleep_interruptible(MOTOR_JOG_TIME):
-#                return "stopped", None, None
-#            motor_stop()
+        if step == 0:
+            print("Motor jog after first ball retraction...")
+            motor_run()
+            if sleep_interruptible(MOTOR_JOG_TIME):
+                return "stopped", None, None
+            motor_stop()
 
+# Added block:
         collected_values = collect_tag_values(timeout=5.0, minimum_values=5)
+        if len(collected_values) < 5:
+            print(
+                f"Step {step + 1}: only {len(collected_values)} tag values captured; recording 5 more seconds"
+            )
+            extra_values = collect_tag_values(
+                timeout=5.0,
+                minimum_values=max(1, 5 - len(collected_values)),
+            )
+            if extra_values:
+                collected_values.extend(extra_values)
+
         if not collected_values:
             print(f"Step {step + 1}: no tag values received")
         else:
@@ -145,7 +157,7 @@ def run_cycle():
     print("Examining data collection...", flush=True)
     count = NUM_STEPS
     if cycle_values:
-        csv_row = f"{cycle_timestamp},{','.join(cycle_values)}"
+        csv_row = f"{cycle_timestamp}\t{','.join(cycle_values)}"
     else:
         csv_row = cycle_timestamp
     return "ok", count, csv_row
