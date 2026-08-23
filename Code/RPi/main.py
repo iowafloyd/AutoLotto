@@ -87,7 +87,16 @@ def collect_tag_values(timeout=5.0, minimum_values=5): # Pi receives at least 5 
     return collected
 
 
-def run_cycle():
+def request_h7_image_capture(loop_number, ball_number):
+    image_name = f"{time.strftime('%Y%m%d_%H%M')}_L{loop_number}_B{ball_number}.jpg"
+    try:
+        ser.write(f"SAVE:{image_name}\n".encode("ascii"))
+        ser.flush()
+    except Exception as exc:
+        print(f"Unable to request H7 image capture: {exc}", flush=True)
+
+
+def run_cycle(loop_number):
     print("Full retraction...", flush=True)
     actuator_retract()
     if sleep_interruptible(FULL_RETRACTION_TIME):
@@ -113,10 +122,11 @@ def run_cycle():
 
     for step in range(NUM_STEPS):
         actuator_retract()
-        
+
         if sleep_interruptible(BALL_STEP_TIME):
             return "stopped", None, None
         actuator_stop()
+        request_h7_image_capture(loop_number, step + 1)
 
         # 1 second of motor run to allow ball drop
         motor_run()
@@ -239,7 +249,7 @@ def main():
 
             cycle_number += 1
             print(f"Starting loop {cycle_number}...", flush=True)
-            status, count, csv_row = run_cycle()
+            status, count, csv_row = run_cycle(cycle_number)
             if status == "stopped":
                 reason = "key press"
                 print("A key was pressed. Stopping the program.", flush=True)
