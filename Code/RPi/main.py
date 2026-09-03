@@ -6,11 +6,9 @@ import time
 import tty
 from pathlib import Path
 
-import serial
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import camera_comm
+from c200_camera import C200Camera
 import csv_output
 from logging_utils import log_completion
 from motion_control import (
@@ -22,11 +20,8 @@ from motion_control import (
     motor_stop,
     setup_gpio,
 )
-from terminal_io import check_for_keypress, enable_raw_mode, restore_terminal, sleep_interruptible
+from terminal_io import enable_raw_mode, restore_terminal, sleep_interruptible
 
-PORT = "/dev/ttyACM0"
-BAUDRATE = 115200
-TIMEOUT = 0.1
 DESKTOP_RESULTS_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "Results")
 
 FULL_EXTENSION_TIME = 5.0 # Actuator extension until platform meets bottom of dome
@@ -51,52 +46,7 @@ def append_csv_row(csv_row, output_path=None):
     return csv_output.append_csv_row(csv_row, output_path=output_path)
 
 
-def clear_serial_input():
-    try:
-        ser.reset_input_buffer()
-    except Exception:
-        try:
-            ser.flushInput()
-        except Exception:
-            pass
-
-
-def collect_tag_values(timeout=5.0, minimum_values=5): # Pi receives at least 5 values per each retraction
-    collected = []
-    clear_serial_input()
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if ser.in_waiting:
-            line = ser.readline().decode("ascii", errors="ignore").strip()
-            if not line:
-                continue
-            if line == "READY":
-                continue
-
-            if line.startswith("TAG:"):
-                value = line.split(":", 1)[1].strip()
-            else:
-                value = line
-
-            if value:
-                collected.append(value)
-                if len(collected) >= minimum_values:
-                    break
-        else:
-            time.sleep(0.01)
-    return collected
-
-
-def request_h7_image_capture(loop_number, ball_number):
-    image_name = f"{time.strftime('%Y%m%d_%H%M')}_L{loop_number}_B{ball_number}.jpg"
-    try:
-        ser.write(f"SAVE:{image_name}\n".encode("ascii"))
-        ser.flush()
-    except Exception as exc:
-        print(f"Unable to request H7 image capture: {exc}", flush=True)
-
-
-def run_cycle(loop_number):
+def run_cycle(loop_number, camera):
     print("Full retraction...", flush=True)
     actuator_retract()
     if sleep_interruptible(FULL_RETRACTION_TIME):
@@ -126,8 +76,6 @@ def run_cycle(loop_number):
         if sleep_interruptible(BALL_STEP_TIME):
             return "stopped", None, None
         actuator_stop()
-        request_h7_image_capture(loop_number, step + 1)
-
         # 1 second of motor run to allow ball drop
         motor_run()
         if sleep_interruptible(1.0):
@@ -142,12 +90,12 @@ def run_cycle(loop_number):
             motor_stop()
 
 # Added block:
-        collected_values = collect_tag_values(timeout=5.0, minimum_values=5)
+        collected_values = camera.collect_tag_values(timeout=5.0, minimum_values=5)
         if len(collected_values) < 5:
             print(
                 f"Step {step + 1}: only {len(collected_values)} tag values captured; recording 5 more seconds"
             )
-            extra_values = collect_tag_values(
+            extra_values = camera.collect_tag_values(
                 timeout=5.0,
                 minimum_values=max(1, 5 - len(collected_values)),
             )
@@ -183,29 +131,21 @@ def shutdown_sequence(reason):
     log_completion(reason)
 
 
-def cleanup():
+def cleanup(camera):
     actuator_stop()
     motor_stop()
     gpio_cleanup()
-    if ser is not None:
-        ser.close()
+    camera.close()
     restore_terminal()
     print("Clean shutdown.")
 
 
 def main():
-    global ser
     try:
-        ser = serial.Serial(PORT, BAUDRATE, timeout=TIMEOUT)
-    except serial.SerialException as exc:
-        print(f"Unable to open {PORT}: {exc}")
+        camera = C200Camera()
+    except (RuntimeError, ImportError) as exc:
+        print(f"Unable to initialize C200 camera: {exc}")
         sys.exit(1)
-
-    print(f"Serial link opened to {PORT}.")
-    print("Requesting H7 handshake...")
-    ser.write(b"HELLO\n")
-    ser.flush()
-    print("Waiting for H7 confirmation...")
 
     setup_gpio()
     initialize_csv_output()
@@ -219,8 +159,6 @@ def main():
         start_time = time.time()
         reason = None
         cycle_number = 0
-        confirmed = False
-
         while True:
             if select.select([sys.stdin], [], [], 0.1)[0]:
                 sys.stdin.read(1)
@@ -228,28 +166,13 @@ def main():
                 reason = "key press"
                 break
 
-            if ser.in_waiting:
-                line = ser.readline().decode("ascii", errors="ignore").strip()
-                if not line:
-                    continue
-
-                if line == "READY":
-                    if not confirmed:
-                        print("H7 present.")
-                        confirmed = True
-                elif line.startswith("TAG:"):
-                    tag_number = line.split(":", 1)[1].strip()
-                    print(f"TAG: {tag_number}")
-                else:
-                    print(line)
-
             if time.time() - start_time >= TOTAL_RUNTIME_SECONDS:
                 reason = "total runtime reached"
                 break
 
             cycle_number += 1
             print(f"Starting loop {cycle_number}...", flush=True)
-            status, count, csv_row = run_cycle(cycle_number)
+            status, count, csv_row = run_cycle(cycle_number, camera)
             if status == "stopped":
                 reason = "key press"
                 print("A key was pressed. Stopping the program.", flush=True)
@@ -275,7 +198,7 @@ def main():
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         if reason is not None:
             shutdown_sequence(reason)
-        cleanup()
+        cleanup(camera)
 
 
 if __name__ == "__main__":
