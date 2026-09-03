@@ -1,9 +1,12 @@
 import os
+import base64
 import sys
 import threading
 import time
 import tkinter as tk
 from pathlib import Path
+
+import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -152,8 +155,10 @@ def main():
     status_text = tk.StringVar(value="Ready")
     cycle_text = tk.StringVar(value="No cycles completed")
     values_text = tk.StringVar(value="")
+    camera_toggle_text = tk.StringVar(value="Camera OFF")
     stop_event = threading.Event()
     worker = None
+    camera_enabled = False
 
     title = tk.Label(
         root,
@@ -162,7 +167,7 @@ def main():
         fg="#ffffff",
         bg="#102027",
     )
-    title.pack(pady=(28, 12))
+    title.pack(pady=(12, 4))
     status_label = tk.Label(
         root,
         textvariable=status_text,
@@ -170,14 +175,14 @@ def main():
         fg="#80cbc4",
         bg="#102027",
     )
-    status_label.pack(pady=12)
+    status_label.pack(pady=4)
     tk.Label(
         root,
         textvariable=cycle_text,
         font=("Helvetica", 18),
         fg="#cfd8dc",
         bg="#102027",
-    ).pack(pady=4)
+    ).pack(pady=2)
     tk.Label(
         root,
         textvariable=values_text,
@@ -185,7 +190,7 @@ def main():
         fg="#cfd8dc",
         bg="#102027",
         wraplength=720,
-    ).pack(pady=4)
+    ).pack(pady=2)
 
     try:
         camera = C200Camera()
@@ -210,7 +215,30 @@ def main():
         height=2,
         relief="flat",
     )
-    button.pack(pady=28)
+    button.pack(pady=8)
+
+    preview_frame = tk.Frame(root, width=400, height=225, bg="#263238")
+    preview_frame.pack_propagate(False)
+    preview_frame.pack(side="bottom", pady=(0, 10))
+    preview_label = tk.Label(preview_frame, bg="#263238")
+    preview_label.pack(expand=True)
+
+    def update_camera_preview():
+        if camera_enabled:
+            frame = camera.read_frame()
+            if frame is not None:
+                frame = cv2.resize(frame, (400, 225))
+                success, encoded = cv2.imencode(".png", frame)
+                if success:
+                    image = tk.PhotoImage(
+                        data=base64.b64encode(encoded.tobytes()).decode("ascii")
+                    )
+                    preview_label.configure(image=image)
+                    preview_label.image = image
+        else:
+            preview_label.configure(image="")
+            preview_label.image = None
+        root.after(100, update_camera_preview)
 
     def update_status(message):
         root.after(0, status_text.set, message)
@@ -255,6 +283,14 @@ def main():
         worker = threading.Thread(target=run_program, daemon=True)
         worker.start()
 
+    def toggle_camera():
+        nonlocal camera_enabled
+        camera_enabled = not camera_enabled
+        camera_toggle_text.set("Camera ON" if camera_enabled else "Camera OFF")
+        camera_toggle_button.config(
+            bg="#2a9d8f" if camera_enabled else "#546e7a"
+        )
+
     def stop_program():
         stop_event.set()
         button.config(state="disabled")
@@ -267,8 +303,23 @@ def main():
         cleanup(camera)
         root.destroy()
 
+    camera_toggle_button = tk.Button(
+        root,
+        textvariable=camera_toggle_text,
+        command=toggle_camera,
+        font=("Helvetica", 16, "bold"),
+        fg="#ffffff",
+        bg="#546e7a",
+        activebackground="#455a64",
+        relief="flat",
+        width=12,
+        height=1,
+    )
+    camera_toggle_button.pack(pady=2)
+
     button.config(command=start_program)
     root.protocol("WM_DELETE_WINDOW", close_program)
+    root.after(100, update_camera_preview)
     root.mainloop()
 
 

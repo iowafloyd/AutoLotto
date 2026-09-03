@@ -1,4 +1,5 @@
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -55,6 +56,7 @@ class C200Camera:
         if not self.capture.isOpened():
             self.capture.release()
             raise RuntimeError(f"Cannot open camera index {camera_index}")
+        self.capture_lock = threading.Lock()
 
         if log_dir is None:
             log_dir = Path(__file__).resolve().parents[2] / "Test" / "camera_logs"
@@ -74,7 +76,8 @@ class C200Camera:
         print(message, file=self.log_file, flush=True)
 
     def read_detections(self):
-        ret, frame = self.capture.read()
+        with self.capture_lock:
+            ret, frame = self.capture.read()
         if not ret:
             self.log("Warning: empty frame, retrying...", error=True)
             return None
@@ -93,6 +96,11 @@ class C200Camera:
                     f"corners={corners} margin={margin}"
                 )
         return detections
+
+    def read_frame(self):
+        with self.capture_lock:
+            ret, frame = self.capture.read()
+        return frame if ret else None
 
     def collect_tag_values(self, timeout=5.0, minimum_values=5):
         collected = []
