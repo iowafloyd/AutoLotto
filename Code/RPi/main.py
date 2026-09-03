@@ -150,10 +150,10 @@ def main():
     root = tk.Tk()
     root.title("AutoLotto")
     root.geometry("800x480")
-    root.configure(bg="#102027")
+    root.configure(bg="#0010EE")
 
-    status_text = tk.StringVar(value="Ready")
-    cycle_text = tk.StringVar(value="No cycles completed")
+    status_text = tk.StringVar(value="Status: Ready")
+    cycle_text = tk.StringVar(value="Cycle # 0")
     values_text = tk.StringVar(value="")
     camera_toggle_text = tk.StringVar(value="Camera OFF")
     stop_event = threading.Event()
@@ -165,69 +165,90 @@ def main():
         text="AutoLotto",
         font=("Helvetica", 32, "bold"),
         fg="#ffffff",
-        bg="#102027",
+        bg="#0010EE",
     )
     title.pack(pady=(12, 4))
     status_label = tk.Label(
         root,
         textvariable=status_text,
-        font=("Helvetica", 25),
-        fg="#80cbc4",
-        bg="#102027",
+        font=("Helvetica", 20),
+        fg="#59c4ee",
+        bg="#0010EE",
     )
-    status_label.pack(pady=4)
-    tk.Label(
+    cycle_label = tk.Label(
         root,
         textvariable=cycle_text,
-        font=("Helvetica", 18),
+        font=("Helvetica", 16),
         fg="#cfd8dc",
-        bg="#102027",
-    ).pack(pady=2)
-    tk.Label(
+        bg="#0010EE",
+    )
+    values_label = tk.Label(
         root,
         textvariable=values_text,
-        font=("Helvetica", 18),
+        font=("Helvetica", 16),
         fg="#cfd8dc",
-        bg="#102027",
+        bg="#0010EE",
         wraplength=720,
-    ).pack(pady=2)
+    )
 
     try:
         camera = C200Camera()
         setup_gpio()
         initialize_csv_output()
     except (RuntimeError, ImportError) as exc:
-        status_text.set(f"Unable to initialize: {exc}")
+        status_text.set(f"Status: Unable to initialize: {exc}")
         tk.Button(
             root, text="CLOSE", command=root.destroy, font=("Helvetica", 24, "bold")
         ).pack(pady=40, ipadx=40, ipady=20)
         root.mainloop()
         return
 
+    controls_frame = tk.Frame(root, bg="#0010EE")
+    controls_frame.pack(fill="x", pady=8)
+
     button = tk.Button(
-        root,
+        controls_frame,
         text="START",
-        font=("Helvetica", 28, "bold"),
+        font=("Helvetica", 14, "bold"),
         fg="#ffffff",
-        bg="#168aad",
+        bg="#59c4ee",
         activebackground="#1a759f",
-        width=10,
-        height=2,
+        width=12,
+        height=1,
         relief="flat",
     )
-    button.pack(pady=8)
 
-    preview_frame = tk.Frame(root, width=400, height=225, bg="#263238")
+    camera_toggle_button = tk.Button(
+        controls_frame,
+        textvariable=camera_toggle_text,
+        command=lambda: toggle_camera(),
+        font=("Helvetica", 14, "bold"),
+        fg="#ffffff",
+        bg="#59c4ee",
+        activebackground="#455a64",
+        relief="flat",
+        width=12,
+        height=1,
+    )
+
+    button.pack(side="left", padx=(40, 0))
+    camera_toggle_button.pack(side="right", padx=(0, 40))
+
+    preview_frame = tk.Frame(root, width=400, height=200, bg="#263238")
     preview_frame.pack_propagate(False)
-    preview_frame.pack(side="bottom", pady=(0, 10))
+    preview_frame.pack(pady=(8, 4))
     preview_label = tk.Label(preview_frame, bg="#263238")
     preview_label.pack(expand=True)
+
+    status_label.pack(pady=2)
+    cycle_label.pack(pady=2)
+    values_label.pack(pady=2)
 
     def update_camera_preview():
         if camera_enabled:
             frame = camera.read_frame()
             if frame is not None:
-                frame = cv2.resize(frame, (400, 225))
+                frame = cv2.resize(frame, (400, 200))
                 success, encoded = cv2.imencode(".png", frame)
                 if success:
                     image = tk.PhotoImage(
@@ -241,11 +262,11 @@ def main():
         root.after(100, update_camera_preview)
 
     def update_status(message):
-        root.after(0, status_text.set, message)
+        root.after(0, status_text.set, f"Status: {message}")
 
     def finished():
-        button.config(text="CLOSE", command=root.destroy, state="normal", bg="#168aad")
-        status_text.set("Complete")
+        button.config(text="CLOSE", command=root.destroy, state="normal", bg="#59c4ee")
+        status_text.set("Status: Complete")
 
     def run_program():
         reason = None
@@ -261,7 +282,7 @@ def main():
                 if status == "stopped":
                     reason = "stop button"
                     break
-                root.after(0, cycle_text.set, f"Cycle {cycle_number} complete")
+                root.after(0, cycle_text.set, f"Cycle # {cycle_number}")
                 if csv_row:
                     root.after(0, values_text.set, csv_row.split("\t", 1)[-1])
                     append_csv_row(csv_row)
@@ -288,13 +309,13 @@ def main():
         camera_enabled = not camera_enabled
         camera_toggle_text.set("Camera ON" if camera_enabled else "Camera OFF")
         camera_toggle_button.config(
-            bg="#2a9d8f" if camera_enabled else "#546e7a"
+            bg="#2a9d8f" if camera_enabled else "#59c4ee"
         )
 
     def stop_program():
         stop_event.set()
         button.config(state="disabled")
-        status_text.set("Stopping...")
+        status_text.set("Status: Stopping...")
 
     def close_program():
         if worker is not None and worker.is_alive():
@@ -302,20 +323,6 @@ def main():
             return
         cleanup(camera)
         root.destroy()
-
-    camera_toggle_button = tk.Button(
-        root,
-        textvariable=camera_toggle_text,
-        command=toggle_camera,
-        font=("Helvetica", 16, "bold"),
-        fg="#ffffff",
-        bg="#546e7a",
-        activebackground="#455a64",
-        relief="flat",
-        width=12,
-        height=1,
-    )
-    camera_toggle_button.pack(pady=2)
 
     button.config(command=start_program)
     root.protocol("WM_DELETE_WINDOW", close_program)
