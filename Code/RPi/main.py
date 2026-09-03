@@ -20,6 +20,7 @@ from motion_control import (
     motor_stop,
     setup_gpio,
 )
+from results_filter import filter_latest_results
 from terminal_io import enable_raw_mode, restore_terminal, sleep_interruptible
 
 DESKTOP_RESULTS_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "Results")
@@ -31,7 +32,7 @@ BALL_STEP_PAUSE = 0.2
 NUM_STEPS = 5
 MOTOR_RUN_TIME = 7.5
 MOTOR_JOG_TIME = 1.5
-TOTAL_RUNTIME_SECONDS = 30 * 60
+TOTAL_RUNTIME_SECONDS = 5 * 60
 
 
 def initialize_csv_output():
@@ -198,6 +199,8 @@ def main():
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         if reason is not None:
             shutdown_sequence(reason)
+        print("Filtering results...", flush=True)
+        filter_latest_results(DESKTOP_RESULTS_DIR)
         cleanup(camera)
 
 

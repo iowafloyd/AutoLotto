@@ -1,5 +1,9 @@
 # Change Log
 
+## Version 2.1
+
+- Added result filtering during shutdown. The latest Results file is analyzed line by line, duplicate values are removed while preserving their first-seen order, and the filtered data is saved to a new file.
+
 ## Version 2.0
 
 Migrated camera-based tag detection from the OpenMV H7 camera to the Anker PowerConf C200 webcam.
