@@ -18,11 +18,49 @@ Press Ctrl-C to exit.
 """
 
 import argparse
+import atexit
+from pathlib import Path
 import sys
 import time
 from datetime import datetime
 
 import cv2
+
+
+class Tee:
+    def __init__(self, terminal, log_file):
+        self.terminal = terminal
+        self.log_file = log_file
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log_file.write(message)
+        self.log_file.flush()
+
+    def flush(self):
+        self.terminal.flush()
+        self.log_file.flush()
+
+
+def open_camera_log():
+    log_dir = Path(__file__).resolve().parent / 'camera_logs'
+    log_dir.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+    log_path = log_dir / f'c200_camera_{timestamp}.log'
+    log_file = log_path.open('w', encoding='utf-8')
+    terminal_stdout = sys.stdout
+    terminal_stderr = sys.stderr
+    sys.stdout = Tee(terminal_stdout, log_file)
+    sys.stderr = Tee(terminal_stderr, log_file)
+    print(f'Camera log: {log_path}')
+    atexit.register(close_camera_log, log_file, terminal_stdout, terminal_stderr)
+    return log_file, terminal_stdout, terminal_stderr
+
+
+def close_camera_log(log_file, stdout, stderr):
+    sys.stdout = stdout
+    sys.stderr = stderr
+    log_file.close()
 
 
 def make_detector():
@@ -65,6 +103,7 @@ def fmt_detection(d):
 
 
 def main():
+    log_file, terminal_stdout, terminal_stderr = open_camera_log()
     parser = argparse.ArgumentParser(description='AprilTag demo for Anker C200 webcam')
     parser.add_argument('--camera', '-c', type=int, default=0, help='Camera index (default: 0)')
     parser.add_argument('--display', '-d', action='store_true', help='Show preview window (optional)')
@@ -125,6 +164,7 @@ def main():
         cap.release()
         if args.display:
             cv2.destroyAllWindows()
+        close_camera_log(log_file, terminal_stdout, terminal_stderr)
 
 
 if __name__ == '__main__':
