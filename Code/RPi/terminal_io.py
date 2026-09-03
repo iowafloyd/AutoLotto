@@ -27,10 +27,13 @@ def check_for_keypress():
     return False
 
 
-def sleep_interruptible(duration):
+def sleep_interruptible(duration, stop_event=None):
     deadline = time.time() + duration
     while time.time() < deadline:
-        if check_for_keypress():
+        interrupted = (
+            stop_event.is_set() if stop_event is not None else check_for_keypress()
+        )
+        if interrupted:
             return True
         time.sleep(min(0.05, deadline - time.time()))
     return False

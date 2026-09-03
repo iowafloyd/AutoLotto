@@ -1,9 +1,8 @@
 import os
-import select
 import sys
-import termios
+import threading
 import time
-import tty
+import tkinter as tk
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -21,7 +20,7 @@ from motion_control import (
     setup_gpio,
 )
 from results_filter import filter_latest_results
-from terminal_io import enable_raw_mode, restore_terminal, sleep_interruptible
+from terminal_io import sleep_interruptible
 
 DESKTOP_RESULTS_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "Results")
 
@@ -47,22 +46,25 @@ def append_csv_row(csv_row, output_path=None):
     return csv_output.append_csv_row(csv_row, output_path=output_path)
 
 
-def run_cycle(loop_number, camera):
+def run_cycle(loop_number, camera, stop_event, status_callback):
+    status_callback("Retracting actuator")
     print("Full retraction...", flush=True)
     actuator_retract()
-    if sleep_interruptible(FULL_RETRACTION_TIME):
+    if sleep_interruptible(FULL_RETRACTION_TIME, stop_event):
         return "stopped", None, None
     actuator_stop()
 
+    status_callback("Extending actuator")
     print("Full extension...", flush=True)
     actuator_extend()
-    if sleep_interruptible(FULL_EXTENSION_TIME):
+    if sleep_interruptible(FULL_EXTENSION_TIME, stop_event):
         return "stopped", None, None
     actuator_stop()
 
+    status_callback("Randomizing balls")
     print("Starting randomization...", flush=True)
     motor_run()
-    if sleep_interruptible(MOTOR_RUN_TIME):
+    if sleep_interruptible(MOTOR_RUN_TIME, stop_event):
         return "stopped", None, None
     motor_stop()
 
@@ -72,21 +74,22 @@ def run_cycle(loop_number, camera):
     cycle_values = []
 
     for step in range(NUM_STEPS):
+        status_callback(f"Collecting ball {step + 1} of {NUM_STEPS}")
         actuator_retract()
 
-        if sleep_interruptible(BALL_STEP_TIME):
+        if sleep_interruptible(BALL_STEP_TIME, stop_event):
             return "stopped", None, None
         actuator_stop()
         # 1 second of motor run to allow ball drop
         motor_run()
-        if sleep_interruptible(1.0):
+        if sleep_interruptible(1.0, stop_event):
             return "stopped", None, None
         motor_stop()
 
         if step == 0:
             print("Motor jog after first ball retraction...")
             motor_run()
-            if sleep_interruptible(MOTOR_JOG_TIME):
+            if sleep_interruptible(MOTOR_JOG_TIME, stop_event):
                 return "stopped", None, None
             motor_stop()
 
@@ -110,7 +113,7 @@ def run_cycle(loop_number, camera):
             print(f"Step {step + 1} values: {csv_value}")
             cycle_values.extend(collected_values)
 
-        if sleep_interruptible(BALL_STEP_PAUSE):
+        if sleep_interruptible(BALL_STEP_PAUSE, stop_event):
             return "stopped", None, None
 
     print("Examining data collection...", flush=True)
@@ -137,71 +140,136 @@ def cleanup(camera):
     motor_stop()
     gpio_cleanup()
     camera.close()
-    restore_terminal()
     print("Clean shutdown.")
 
 
 def main():
+    root = tk.Tk()
+    root.title("AutoLotto")
+    root.geometry("800x480")
+    root.configure(bg="#102027")
+
+    status_text = tk.StringVar(value="Ready")
+    cycle_text = tk.StringVar(value="No cycles completed")
+    values_text = tk.StringVar(value="")
+    stop_event = threading.Event()
+    worker = None
+
+    title = tk.Label(
+        root,
+        text="AutoLotto",
+        font=("Helvetica", 32, "bold"),
+        fg="#ffffff",
+        bg="#102027",
+    )
+    title.pack(pady=(28, 12))
+    status_label = tk.Label(
+        root,
+        textvariable=status_text,
+        font=("Helvetica", 25),
+        fg="#80cbc4",
+        bg="#102027",
+    )
+    status_label.pack(pady=12)
+    tk.Label(
+        root,
+        textvariable=cycle_text,
+        font=("Helvetica", 18),
+        fg="#cfd8dc",
+        bg="#102027",
+    ).pack(pady=4)
+    tk.Label(
+        root,
+        textvariable=values_text,
+        font=("Helvetica", 18),
+        fg="#cfd8dc",
+        bg="#102027",
+        wraplength=720,
+    ).pack(pady=4)
+
     try:
         camera = C200Camera()
+        setup_gpio()
+        initialize_csv_output()
     except (RuntimeError, ImportError) as exc:
-        print(f"Unable to initialize C200 camera: {exc}")
-        sys.exit(1)
+        status_text.set(f"Unable to initialize: {exc}")
+        tk.Button(
+            root, text="CLOSE", command=root.destroy, font=("Helvetica", 24, "bold")
+        ).pack(pady=40, ipadx=40, ipady=20)
+        root.mainloop()
+        return
 
-    setup_gpio()
-    initialize_csv_output()
-    enable_raw_mode()
+    button = tk.Button(
+        root,
+        text="START",
+        font=("Helvetica", 28, "bold"),
+        fg="#ffffff",
+        bg="#168aad",
+        activebackground="#1a759f",
+        width=10,
+        height=2,
+        relief="flat",
+    )
+    button.pack(pady=28)
 
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    tty.setraw(fd)
+    def update_status(message):
+        root.after(0, status_text.set, message)
 
-    try:
-        start_time = time.time()
+    def finished():
+        button.config(text="CLOSE", command=root.destroy, state="normal", bg="#168aad")
+        status_text.set("Complete")
+
+    def run_program():
         reason = None
         cycle_number = 0
-        while True:
-            if select.select([sys.stdin], [], [], 0.1)[0]:
-                sys.stdin.read(1)
-                print("Exiting.")
-                reason = "key press"
-                break
-
-            if time.time() - start_time >= TOTAL_RUNTIME_SECONDS:
-                reason = "total runtime reached"
-                break
-
-            cycle_number += 1
-            print(f"Starting loop {cycle_number}...", flush=True)
-            status, count, csv_row = run_cycle(cycle_number, camera)
-            if status == "stopped":
-                reason = "key press"
-                print("A key was pressed. Stopping the program.", flush=True)
-                break
-
-            if count is None:
-                print(f"Loop {cycle_number} ball count: unknown", flush=True)
+        start_time = time.time()
+        try:
+            while not stop_event.is_set() and time.time() - start_time < TOTAL_RUNTIME_SECONDS:
+                cycle_number += 1
+                update_status(f"Starting cycle {cycle_number}")
+                status, count, csv_row = run_cycle(
+                    cycle_number, camera, stop_event, update_status
+                )
+                if status == "stopped":
+                    reason = "stop button"
+                    break
+                root.after(0, cycle_text.set, f"Cycle {cycle_number} complete")
                 if csv_row:
-                    print(f"Loop {cycle_number} values: {csv_row}", flush=True)
-                print("FAIL", flush=True)
-            else:
-                print(f"Loop {cycle_number} ball count: {count}", flush=True)
-                if csv_row:
-                    print(f"Loop {cycle_number} values: {csv_row}", flush=True)
+                    root.after(0, values_text.set, csv_row.split("\t", 1)[-1])
                     append_csv_row(csv_row)
-                print("PASS" if count == NUM_STEPS else "FAIL", flush=True)
-
-            print("Cycle complete. Press any key to stop the program.", flush=True)
-    except KeyboardInterrupt:
-        reason = "keyboard interrupt"
-        print("\nInterrupted by user.")
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        if reason is not None:
+                update_status("Ready for next cycle")
+            if reason is None:
+                reason = "total runtime reached"
+        finally:
+            update_status("Stopping systems")
             shutdown_sequence(reason)
-        print("Filtering results...", flush=True)
-        filter_latest_results(DESKTOP_RESULTS_DIR)
+            update_status("Filtering results")
+            filter_latest_results(DESKTOP_RESULTS_DIR)
+            cleanup(camera)
+            root.after(0, finished)
+
+    def start_program():
+        nonlocal worker
+        stop_event.clear()
+        button.config(text="STOP", command=stop_program, bg="#d62828")
+        worker = threading.Thread(target=run_program, daemon=True)
+        worker.start()
+
+    def stop_program():
+        stop_event.set()
+        button.config(state="disabled")
+        status_text.set("Stopping...")
+
+    def close_program():
+        if worker is not None and worker.is_alive():
+            stop_program()
+            return
         cleanup(camera)
+        root.destroy()
+
+    button.config(command=start_program)
+    root.protocol("WM_DELETE_WINDOW", close_program)
+    root.mainloop()
 
 
 if __name__ == "__main__":
