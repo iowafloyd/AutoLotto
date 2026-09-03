@@ -1,5 +1,13 @@
 # Change Log
 
+## Version 2.2
+
+- Replaced terminal-based program control with a Tkinter GUI that supports starting and stopping the AutoLotto process.
+- Moved cycle execution to a background thread so the GUI remains responsive during hardware and camera operations.
+- Added cooperative stop-event handling throughout timed cycle operations.
+- Added an optional live camera feed using the existing camera capture, with synchronized access between preview and AprilTag detection.
+- Added desktop launcher and graphical-session autostart support using the project's virtual environment.
+
 ## Version 2.1
 
 - Added result filtering during shutdown. The latest Results file is analyzed line by line, duplicate values are removed while preserving their first-seen order, and the filtered data is saved to a new file.

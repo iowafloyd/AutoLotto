@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=AutoLotto
+Comment=Run the AutoLotto machine
+Exec=/home/cameron/Dev/AutoLotto/run_autolotto.sh
+Path=/home/cameron/Dev/AutoLotto
+Icon=applications-science
+Terminal=false
+Categories=Utility;
+StartupNotify=true
+X-GNOME-Autostart-enabled=true

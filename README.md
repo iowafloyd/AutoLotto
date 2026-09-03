@@ -2,6 +2,18 @@
 
 This project uses a timed sequence of actuator and motor actions during each cycle. The following summary documents the current timing behavior for troubleshooting.
 
+## Desktop launcher
+
+The Raspberry Pi GUI can be launched from a desktop icon and started automatically with the graphical desktop session.
+
+From the project directory, run:
+
+```sh
+./install_autolotto.sh
+```
+
+This installs `AutoLotto.desktop` on the desktop and in the user's autostart directory. The launcher uses the project's `.venv` Python interpreter and starts `Code/RPi/main.py` without opening a terminal window.
+
 ## Cycle timing sequence
 
 1. Full actuator retraction
