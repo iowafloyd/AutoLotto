@@ -34,7 +34,8 @@ BALL_STEP_PAUSE = 0.2
 NUM_STEPS = 5
 MOTOR_RUN_TIME = 7.5
 MOTOR_JOG_TIME = 1.5
-TOTAL_RUNTIME_SECONDS = 5 * 60
+DEFAULT_RUNTIME_MINUTES = 15
+RUNTIME_STEP_MINUTES = 15
 
 
 def initialize_csv_output():
@@ -150,46 +151,29 @@ def main():
     root = tk.Tk()
     root.title("AutoLotto")
     root.geometry("800x480")
-    root.configure(bg="#0010EE")
+    root.minsize(800, 480)
+
+    navy = "#071727"
+    panel = "#0b1d31"
+    panel_border = "#1d3c5c"
+    muted = "#91a9c9"
+    light_blue = "#59c4ee"
+    green = "#13d77d"
+    bright_blue = "#238df2"
+    dark_button = "#1d3552"
+    root.configure(bg=navy)
 
     status_text = tk.StringVar(value="Status: Ready")
     cycle_text = tk.StringVar(value="Cycle # 0")
     values_text = tk.StringVar(value="")
-    camera_toggle_text = tk.StringVar(value="Camera OFF")
+    camera_toggle_text = tk.StringVar(value="◩  WEBCAM OFF")
+    runtime_minutes = tk.IntVar(value=DEFAULT_RUNTIME_MINUTES)
+    elapsed_text = tk.StringVar(value="Elapsed Time: 0 min")
     stop_event = threading.Event()
     worker = None
     camera_enabled = False
-
-    title = tk.Label(
-        root,
-        text="AutoLotto",
-        font=("Helvetica", 32, "bold"),
-        fg="#ffffff",
-        bg="#0010EE",
-    )
-    title.pack(pady=(12, 4))
-    status_label = tk.Label(
-        root,
-        textvariable=status_text,
-        font=("Helvetica", 20),
-        fg="#59c4ee",
-        bg="#0010EE",
-    )
-    cycle_label = tk.Label(
-        root,
-        textvariable=cycle_text,
-        font=("Helvetica", 16),
-        fg="#cfd8dc",
-        bg="#0010EE",
-    )
-    values_label = tk.Label(
-        root,
-        textvariable=values_text,
-        font=("Helvetica", 16),
-        fg="#cfd8dc",
-        bg="#0010EE",
-        wraplength=720,
-    )
+    selected_runtime_seconds = DEFAULT_RUNTIME_MINUTES * 60
+    run_start_time = None
 
     try:
         camera = C200Camera()
@@ -203,52 +187,275 @@ def main():
         root.mainloop()
         return
 
-    controls_frame = tk.Frame(root, bg="#0010EE")
-    controls_frame.pack(fill="x", pady=8)
+    def change_runtime(amount):
+        runtime_minutes.set(max(RUNTIME_STEP_MINUTES, runtime_minutes.get() + amount))
+
+    def open_settings():
+        settings_window = tk.Toplevel(root)
+        settings_window.title("Settings")
+        settings_window.geometry("360x250")
+        settings_window.resizable(False, False)
+        settings_window.configure(bg=panel)
+        settings_window.transient(root)
+        settings_window.grab_set()
+
+        tk.Label(
+            settings_window,
+            text="SETTINGS",
+            font=("DejaVu Sans", 17, "bold"),
+            fg="#ffffff",
+            bg=panel,
+        ).pack(pady=(20, 12))
+        tk.Label(
+            settings_window,
+            text="TOTAL RUNTIME",
+            font=("DejaVu Sans", 11),
+            fg=muted,
+            bg=panel,
+        ).pack()
+
+        stepper = tk.Frame(settings_window, bg=panel)
+        stepper.pack(fill="x", padx=28, pady=14)
+        step_button_options = {
+            "font": ("DejaVu Sans", 24, "bold"),
+            "width": 3,
+            "height": 1,
+            "fg": "#ffffff",
+            "bg": dark_button,
+            "activebackground": "#2a486b",
+            "relief": "flat",
+        }
+        tk.Button(
+            stepper,
+            text="−",
+            command=lambda: change_runtime(-RUNTIME_STEP_MINUTES),
+            **step_button_options,
+        ).pack(side="left", expand=True, fill="x", padx=(0, 8))
+        tk.Label(
+            stepper,
+            textvariable=runtime_minutes,
+            font=("DejaVu Sans", 24, "bold"),
+            width=5,
+            fg="#ffffff",
+            bg=navy,
+        ).pack(side="left", padx=8, ipady=5)
+        tk.Button(
+            stepper,
+            text="+",
+            command=lambda: change_runtime(RUNTIME_STEP_MINUTES),
+            **step_button_options,
+        ).pack(side="left", expand=True, fill="x", padx=(8, 0))
+        tk.Button(
+            settings_window,
+            text="DONE",
+            command=settings_window.destroy,
+            font=("DejaVu Sans", 12, "bold"),
+            fg="#ffffff",
+            bg=light_blue,
+            activebackground="#1a759f",
+            relief="flat",
+            width=12,
+            height=1,
+        ).pack(pady=(0, 16))
+
+    header = tk.Frame(root, bg=navy, height=72)
+    header.grid(row=0, column=0, columnspan=3, sticky="nsew")
+    header.grid_propagate(False)
+    tk.Label(
+        header,
+        text="✣",
+        font=("DejaVu Sans", 34, "bold"),
+        fg=green,
+        bg=navy,
+    ).pack(side="left", padx=(24, 8))
+    logo = tk.Frame(header, bg=navy)
+    logo.pack(side="left", pady=10)
+    tk.Label(
+        logo,
+        text="AUTO ",
+        font=("DejaVu Sans", 25, "bold"),
+        fg="#ffffff",
+        bg=navy,
+    ).pack(side="left")
+    tk.Label(
+        logo,
+        text="LOTTO",
+        font=("DejaVu Sans", 25, "bold"),
+        fg=green,
+        bg=navy,
+    ).pack(side="left")
+    tk.Label(
+        header,
+        text="RANDOM  •  FAIR  •  AUTOMATED",
+        font=("DejaVu Sans", 9),
+        fg=muted,
+        bg=navy,
+    ).pack(side="left", padx=18, pady=(15, 0))
+    tk.Button(
+        header,
+        text="⚙",
+        command=open_settings,
+        font=("DejaVu Sans", 22),
+        fg=muted,
+        bg=navy,
+        activebackground=navy,
+        activeforeground="#ffffff",
+        relief="flat",
+        bd=0,
+    ).pack(side="right", padx=24)
+
+    content = tk.Frame(root, bg=navy)
+    content.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=16, pady=12)
+    content.grid_columnconfigure(1, weight=1)
+
+    controls_frame = tk.Frame(
+        content, bg=panel, highlightbackground=panel_border, highlightthickness=1
+    )
+    controls_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
     button = tk.Button(
         controls_frame,
-        text="START",
-        font=("Helvetica", 14, "bold"),
+        text="▶  START",
+        font=("DejaVu Sans", 15, "bold"),
         fg="#ffffff",
-        bg="#59c4ee",
-        activebackground="#1a759f",
+        bg=green,
+        activebackground="#0fb96b",
         width=12,
-        height=1,
+        height=2,
         relief="flat",
     )
+    button.pack(fill="x", padx=16, pady=(20, 10))
 
     camera_toggle_button = tk.Button(
         controls_frame,
         textvariable=camera_toggle_text,
         command=lambda: toggle_camera(),
-        font=("Helvetica", 14, "bold"),
+        font=("DejaVu Sans", 12, "bold"),
         fg="#ffffff",
-        bg="#59c4ee",
-        activebackground="#455a64",
+        bg=dark_button,
+        activebackground="#1677d4",
         relief="flat",
         width=12,
-        height=1,
+        height=2,
     )
+    camera_toggle_button.pack(fill="x", padx=16, pady=(20, 10))
 
-    button.pack(side="left", padx=(40, 0))
-    camera_toggle_button.pack(side="right", padx=(0, 40))
-
-    preview_frame = tk.Frame(root, width=400, height=200, bg="#263238")
+    preview_frame = tk.Frame(
+        content,
+        width=410,
+        height=230,
+        bg="#152334",
+        highlightbackground=light_blue,
+        highlightcolor=light_blue,
+        highlightthickness=3,
+    )
     preview_frame.pack_propagate(False)
-    preview_frame.pack(pady=(8, 4))
-    preview_label = tk.Label(preview_frame, bg="#263238")
+    preview_frame.grid(row=0, column=1, sticky="nsew")
+    preview_label = tk.Label(preview_frame, bg="#152334")
     preview_label.pack(expand=True)
 
-    status_label.pack(pady=2)
-    cycle_label.pack(pady=2)
-    values_label.pack(pady=2)
+    runtime_frame = tk.Frame(
+        content, bg=panel, highlightbackground=panel_border, highlightthickness=1
+    )
+    runtime_frame.grid(row=0, column=2, sticky="nsew", padx=(10, 0))
+    tk.Label(
+        runtime_frame,
+        text="TOTAL RUNTIME",
+        font=("DejaVu Sans", 12),
+        fg=muted,
+        bg=panel,
+    ).pack(anchor="w", padx=18, pady=(26, 12))
+    runtime_value_frame = tk.Frame(
+        runtime_frame,
+        bg=navy,
+        highlightbackground=panel_border,
+        highlightthickness=1,
+    )
+    runtime_value_frame.pack(fill="x", padx=16, pady=(0, 18))
+    tk.Label(
+        runtime_value_frame,
+        textvariable=runtime_minutes,
+        font=("DejaVu Sans", 32, "bold"),
+        fg="#ffffff",
+        bg=navy,
+    ).pack(side="left", padx=(28, 8), pady=10)
+    tk.Label(
+        runtime_value_frame,
+        text="min",
+        font=("DejaVu Sans", 15),
+        fg=muted,
+        bg=navy,
+    ).pack(side="left", pady=(16, 0))
+    tk.Label(
+        runtime_frame,
+        textvariable=elapsed_text,
+        font=("DejaVu Sans", 12),
+        fg=muted,
+        bg=panel,
+    ).pack(anchor="w", padx=18, pady=(0, 12))
+
+    footer = tk.Frame(
+        root, bg=panel, highlightbackground=panel_border, highlightthickness=1
+    )
+    footer.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=18, pady=(0, 14))
+    status_section = tk.Frame(footer, bg=panel)
+    status_section.pack(side="left", fill="y", padx=22, pady=10)
+    status_label = tk.Label(
+        status_section,
+        textvariable=status_text,
+        font=("DejaVu Sans", 18, "bold"),
+        fg=green,
+        bg=panel,
+    )
+    status_label.pack(anchor="w", pady=8)
+    tk.Frame(footer, width=1, bg=panel_border).pack(side="left", fill="y", pady=10)
+    values_section = tk.Frame(footer, bg=panel)
+    values_section.pack(side="left", fill="both", expand=True, padx=22, pady=10)
+    values_label = tk.Label(
+        values_section,
+        textvariable=values_text,
+        font=("DejaVu Sans", 11),
+        fg=muted,
+        bg=panel,
+        wraplength=360,
+    )
+    tk.Label(
+        values_section,
+        text="DRAWN VALUES",
+        font=("DejaVu Sans", 9),
+        fg=muted,
+        bg=panel,
+    ).pack(anchor="w")
+    values_label.pack(anchor="w", pady=(4, 0))
+    tk.Frame(footer, width=1, bg=panel_border).pack(side="left", fill="y", pady=10)
+    cycle_section = tk.Frame(footer, bg=panel)
+    cycle_section.pack(side="right", fill="y", padx=22, pady=10)
+    tk.Label(
+        cycle_section,
+        text="CYCLE COUNT",
+        font=("DejaVu Sans", 9),
+        fg=muted,
+        bg=panel,
+    ).pack(anchor="w")
+    cycle_label = tk.Label(
+        cycle_section,
+        textvariable=cycle_text,
+        font=("DejaVu Sans", 15, "bold"),
+        fg="#ffffff",
+        bg=panel,
+    )
+    cycle_label.pack(anchor="w", pady=(4, 0))
+
+    root.grid_rowconfigure(1, weight=1)
+    root.grid_columnconfigure(0, weight=1)
+    root.grid_columnconfigure(1, weight=1)
+    root.grid_columnconfigure(2, weight=1)
 
     def update_camera_preview():
         if camera_enabled:
             frame = camera.read_frame()
             if frame is not None:
-                frame = cv2.resize(frame, (400, 200))
+                frame = cv2.resize(frame, (410, 224))
                 success, encoded = cv2.imencode(".png", frame)
                 if success:
                     image = tk.PhotoImage(
@@ -261,6 +468,12 @@ def main():
             preview_label.image = None
         root.after(100, update_camera_preview)
 
+    def update_elapsed_time():
+        if run_start_time is not None:
+            elapsed_minutes = int((time.time() - run_start_time) // 60)
+            elapsed_text.set(f"Elapsed Time: {elapsed_minutes} min")
+        root.after(1000, update_elapsed_time)
+
     def update_status(message):
         root.after(0, status_text.set, f"Status: {message}")
 
@@ -269,11 +482,14 @@ def main():
         status_text.set("Status: Complete")
 
     def run_program():
+        nonlocal run_start_time
         reason = None
         cycle_number = 0
         start_time = time.time()
+        run_start_time = start_time
+        runtime_seconds = selected_runtime_seconds
         try:
-            while not stop_event.is_set() and time.time() - start_time < TOTAL_RUNTIME_SECONDS:
+            while not stop_event.is_set() and time.time() - start_time < runtime_seconds:
                 cycle_number += 1
                 update_status(f"Starting cycle {cycle_number}")
                 status, count, csv_row = run_cycle(
@@ -298,8 +514,10 @@ def main():
             root.after(0, finished)
 
     def start_program():
-        nonlocal worker
+        nonlocal selected_runtime_seconds, worker, run_start_time
         stop_event.clear()
+        selected_runtime_seconds = runtime_minutes.get() * 60
+        run_start_time = time.time()
         button.config(text="STOP", command=stop_program, bg="#d62828")
         worker = threading.Thread(target=run_program, daemon=True)
         worker.start()
@@ -307,9 +525,11 @@ def main():
     def toggle_camera():
         nonlocal camera_enabled
         camera_enabled = not camera_enabled
-        camera_toggle_text.set("Camera ON" if camera_enabled else "Camera OFF")
+        camera_toggle_text.set(
+            "▣  WEBCAM ON" if camera_enabled else "◩  WEBCAM OFF"
+        )
         camera_toggle_button.config(
-            bg="#2a9d8f" if camera_enabled else "#59c4ee"
+            bg=bright_blue if camera_enabled else dark_button
         )
 
     def stop_program():
@@ -327,6 +547,7 @@ def main():
     button.config(command=start_program)
     root.protocol("WM_DELETE_WINDOW", close_program)
     root.after(100, update_camera_preview)
+    root.after(1000, update_elapsed_time)
     root.mainloop()
 
 
