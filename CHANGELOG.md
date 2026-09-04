@@ -1,5 +1,13 @@
 # Change Log
 
+## Version 2.3
+
+- Modularized the Raspberry Pi application into focused components: shared configuration, cycle control, Tkinter GUI, and application initialization.
+- Moved actuator sequencing, camera-confirmed ball extraction, shutdown, and hardware cleanup into `cycle_controller.py`.
+- Moved GUI construction, runtime settings, camera preview, status updates, and worker-thread management into `gui.py`.
+- Added `application.py` to coordinate camera, GPIO, CSV output, the cycle controller, and the GUI.
+- Reduced `main.py` to a thin application entry point.
+
 ## Version 2.2
 
 - Replaced terminal-based program control with a Tkinter GUI that supports starting and stopping the AutoLotto process.
