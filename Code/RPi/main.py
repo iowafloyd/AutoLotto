@@ -50,7 +50,9 @@ def append_csv_row(csv_row, output_path=None):
     return csv_output.append_csv_row(csv_row, output_path=output_path)
 
 
-def run_cycle(loop_number, camera, stop_event, status_callback):
+def run_cycle(
+    loop_number, camera, stop_event, status_callback, drawn_values_callback=None
+):
     status_callback("Retracting actuator")
     print("Full retraction...", flush=True)
     actuator_retract()
@@ -76,6 +78,7 @@ def run_cycle(loop_number, camera, stop_event, status_callback):
     print("Beginning ball extraction.")
     cycle_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     cycle_values = []
+    previous_visible_tags = camera.read_tag_ids() or set()
 
     for step in range(NUM_STEPS):
         status_callback(f"Collecting ball {step + 1} of {NUM_STEPS}")
@@ -97,31 +100,29 @@ def run_cycle(loop_number, camera, stop_event, status_callback):
                 return "stopped", None, None
             motor_stop()
 
-# Added block:
-        collected_values = camera.collect_tag_values(timeout=5.0, minimum_values=5)
-        if len(collected_values) < 5:
-            print(
-                f"Step {step + 1}: only {len(collected_values)} tag values captured; recording 5 more seconds"
-            )
-            extra_values = camera.collect_tag_values(
-                timeout=5.0,
-                minimum_values=max(1, 5 - len(collected_values)),
-            )
-            if extra_values:
-                collected_values.extend(extra_values)
+        status_callback("Waiting for ball confirmation")
+        confirmed_tag, visible_tags = camera.wait_for_new_tag(
+            previous_visible_tags,
+            cycle_values,
+            stop_event=stop_event,
+        )
+        if confirmed_tag is None:
+            if stop_event.is_set():
+                return "stopped", None, None
+            status_callback("Ball confirmation timed out")
+            return "timeout", None, None
 
-        if not collected_values:
-            print(f"Step {step + 1}: no tag values received")
-        else:
-            csv_value = ",".join(collected_values)
-            print(f"Step {step + 1} values: {csv_value}")
-            cycle_values.extend(collected_values)
+        cycle_values.append(confirmed_tag)
+        previous_visible_tags = visible_tags
+        print(f"Step {step + 1} confirmed value: {confirmed_tag}")
+        if drawn_values_callback is not None:
+            drawn_values_callback(",".join(cycle_values))
 
         if sleep_interruptible(BALL_STEP_PAUSE, stop_event):
             return "stopped", None, None
 
     print("Examining data collection...", flush=True)
-    count = NUM_STEPS
+    count = len(cycle_values)
     if cycle_values:
         csv_row = f"{cycle_timestamp}\t{','.join(cycle_values)}"
     else:
@@ -493,10 +494,17 @@ def main():
                 cycle_number += 1
                 update_status(f"Starting cycle {cycle_number}")
                 status, count, csv_row = run_cycle(
-                    cycle_number, camera, stop_event, update_status
+                    cycle_number,
+                    camera,
+                    stop_event,
+                    update_status,
+                    lambda values: root.after(0, values_text.set, values),
                 )
                 if status == "stopped":
                     reason = "stop button"
+                    break
+                if status == "timeout":
+                    reason = "ball confirmation timeout"
                     break
                 root.after(0, cycle_text.set, f"Cycle # {cycle_number}")
                 if csv_row:

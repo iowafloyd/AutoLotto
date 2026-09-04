@@ -102,6 +102,53 @@ class C200Camera:
             ret, frame = self.capture.read()
         return frame if ret else None
 
+    def read_tag_ids(self):
+        detections = self.read_detections()
+        if detections is None:
+            return None
+        return {
+            str(format_detection(detection)[0])
+            for detection in detections
+            if format_detection(detection)[0] is not None
+        }
+
+    def wait_for_new_tag(
+        self,
+        previous_visible_tags,
+        confirmed_tags,
+        stop_event=None,
+        timeout=10.0,
+        stable_frames=3,
+        poll_interval=0.05,
+    ):
+        deadline = time.monotonic() + timeout
+        candidate = None
+        candidate_frames = 0
+        last_visible_tags = set(previous_visible_tags)
+        while time.monotonic() < deadline:
+            if stop_event is not None and stop_event.is_set():
+                return None, last_visible_tags
+            visible_tags = self.read_tag_ids()
+            if visible_tags is None:
+                time.sleep(poll_interval)
+                continue
+            last_visible_tags = visible_tags
+            new_tags = visible_tags - set(previous_visible_tags) - set(confirmed_tags)
+            if len(new_tags) == 1:
+                new_candidate = next(iter(new_tags))
+                if new_candidate == candidate:
+                    candidate_frames += 1
+                else:
+                    candidate = new_candidate
+                    candidate_frames = 1
+                if candidate_frames >= stable_frames:
+                    return candidate, visible_tags
+            else:
+                candidate = None
+                candidate_frames = 0
+            time.sleep(poll_interval)
+        return None, last_visible_tags
+
     def collect_tag_values(self, timeout=5.0, minimum_values=5):
         collected = []
         deadline = time.monotonic() + timeout
