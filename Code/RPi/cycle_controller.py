@@ -23,37 +23,46 @@ from config import (
 
 
 class CycleController:
+    # Coordinate one complete ball-randomization and collection cycle.
     def __init__(self, camera):
         self.camera = camera
 
+    # Run the actuator, motor, camera, and result-recording workflow.
     def run_cycle(self, stop_event, status_callback, drawn_values_callback=None):
         status_callback("Retracting actuator")
-        print("Full retraction...", flush=True)
+        print("Full retraction", flush=True)
         actuator_retract()
         if sleep_interruptible(FULL_RETRACTION_TIME, stop_event):
             return "stopped", None, None
         actuator_stop()
 
         status_callback("Extending actuator")
-        print("Full extension...", flush=True)
+        print("Full extension", flush=True)
         actuator_extend()
         if sleep_interruptible(FULL_EXTENSION_TIME, stop_event):
             return "stopped", None, None
         actuator_stop()
 
         status_callback("Randomizing balls")
-        print("Starting randomization...", flush=True)
+        print("Starting randomization", flush=True)
         motor_run()
         if sleep_interruptible(MOTOR_RUN_TIME, stop_event):
             return "stopped", None, None
         motor_stop()
 
-        print("Randomization complete. Starting data collection.")
-        print("Beginning ball extraction.")
+        # Reset the platform and randomize the balls before collection.
+        actuator_retract() # Initial actuator retraction so platform aligns with bottom of dome. Aids in first-ball alignment with camera
+        if sleep_interruptible(BALL_STEP_TIME / 2, stop_event):
+            return "stopped", None, None
+        actuator_stop()
+
+        print("Randomization complete. Starting data collection")
+        print("Beginning ball extraction")
         cycle_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         cycle_values = []
         previous_visible_tags = self.camera.read_tag_ids() or set()
 
+        # Extract and confirm each ball, stopping on interruption or timeout.
         for step in range(NUM_STEPS):
             status_callback(f"Collecting ball {step + 1} of {NUM_STEPS}")
             actuator_retract()
@@ -94,7 +103,7 @@ class CycleController:
             if sleep_interruptible(BALL_STEP_PAUSE, stop_event):
                 return "stopped", None, None
 
-        print("Examining data collection...", flush=True)
+        print("Examining data collection", flush=True)
         count = len(cycle_values)
         if cycle_values:
             csv_row = f"{cycle_timestamp}\t{','.join(cycle_values)}"
@@ -102,8 +111,9 @@ class CycleController:
             csv_row = cycle_timestamp
         return "ok", count, csv_row
 
-    def shutdown(self, reason):
-        print(f"Stopping all systems ({reason})...")
+    # Return the machine to a safe state and record the completion reason.
+    def shutdown(self, reason, stop_event=None):
+        print(f"Stopping all systems ({reason})")
         motor_stop()
         print("Full actuator retraction before shutdown")
         actuator_retract()
@@ -111,9 +121,10 @@ class CycleController:
         actuator_stop()
         log_completion(reason)
 
+    # Release all hardware resources after the run has ended.
     def cleanup(self):
         actuator_stop()
         motor_stop()
         gpio_cleanup()
         self.camera.close()
-        print("Clean shutdown.")
+        print("Clean shutdown")

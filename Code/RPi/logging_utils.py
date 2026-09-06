@@ -5,6 +5,7 @@ import time
 ERROR_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'error.log')
 
 
+# Record an error in both the console and the persistent log.
 def log_error(message):
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
     full_message = f'[{timestamp}] {message}'
@@ -13,6 +14,7 @@ def log_error(message):
         handle.write(full_message + '\n')
 
 
+# Record a normal program completion in the persistent log.
 def log_completion(reason):
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
     message = f'Program completed at {timestamp} ({reason}) \n'

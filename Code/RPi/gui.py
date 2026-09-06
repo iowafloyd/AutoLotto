@@ -1,6 +1,7 @@
 import base64
 import threading
 import time
+from pathlib import Path
 import tkinter as tk
 
 import cv2
@@ -15,6 +16,7 @@ from results_filter import filter_latest_results
 
 
 class AutoLottoApp:
+    # Own the operator-facing window and coordinate GUI callbacks.
     def __init__(self, root, camera, controller):
         self.root = root
         self.camera = camera
@@ -29,6 +31,7 @@ class AutoLottoApp:
         self.muted = "#91a9c9"
         self.light_blue = "#59c4ee"
         self.green = "#13d77d"
+        self.icon_green = "#4aff2f"
         self.bright_blue = "#238df2"
         self.dark_button = "#1d3552"
         self.root.configure(bg=self.navy)
@@ -36,11 +39,13 @@ class AutoLottoApp:
         self.status_text = tk.StringVar(value="Status: Ready")
         self.cycle_text = tk.StringVar(value="Cycle # 0")
         self.values_text = tk.StringVar(value="")
-        self.camera_toggle_text = tk.StringVar(value="◩  WEBCAM OFF")
+        self.camera_toggle_text = tk.StringVar(value="◩  CAMERA OFF")
         self.runtime_minutes = tk.IntVar(value=DEFAULT_RUNTIME_MINUTES)
         self.elapsed_text = tk.StringVar(value="Elapsed Time: 0 min")
         self.stop_event = threading.Event()
+        self.run_generation = 0
         self.worker = None
+        self.close_requested = False
         self.camera_enabled = False
         self.selected_runtime_seconds = DEFAULT_RUNTIME_MINUTES * 60
         self.run_start_time = None
@@ -49,27 +54,34 @@ class AutoLottoApp:
         self.root.after(100, self.update_camera_preview)
         self.root.after(1000, self.update_elapsed_time)
 
+    # Build the dashboard layout and bind its controls.
     def _build_layout(self):
+        # Display branding, the icon, and application settings access.
         header = tk.Frame(self.root, bg=self.navy, height=72)
         header.grid(row=0, column=0, columnspan=3, sticky="nsew")
         header.grid_propagate(False)
-        tk.Label(header, text="✣", font=("DejaVu Sans", 34, "bold"), fg=self.green, bg=self.navy).pack(side="left", padx=(24, 8))
+        icon_path = Path(__file__).resolve().parents[2] / "img" / "AL_green_small.png"
+        self.logo_image = tk.PhotoImage(file=str(icon_path))
+        tk.Label(header, image=self.logo_image, bg=self.navy).pack(side="left", padx=(24, 8))
         logo = tk.Frame(header, bg=self.navy)
         logo.pack(side="left", pady=10)
-        tk.Label(logo, text="AUTO ", font=("DejaVu Sans", 25, "bold"), fg="#ffffff", bg=self.navy).pack(side="left")
-        tk.Label(logo, text="LOTTO", font=("DejaVu Sans", 25, "bold"), fg=self.green, bg=self.navy).pack(side="left")
-        tk.Label(header, text="RANDOM  •  FAIR  •  AUTOMATED", font=("DejaVu Sans", 9), fg=self.muted, bg=self.navy).pack(side="left", padx=18, pady=(15, 0))
+        tk.Label(logo, text="AUTO", font=("DejaVu Sans", 25, "bold"), fg="#ffffff", bg=self.navy).pack(side="left")
+        tk.Label(logo, text="LOTTO", font=("DejaVu Sans", 25, "bold"), fg=self.icon_green, bg=self.navy).pack(side="left")
+        tk.Label(header, text="Automate your way to winning!", font=("DejaVu Sans", 12), fg=self.muted, bg=self.navy).pack(side="left", padx=18, pady=(7, 7))
         tk.Button(header, text="⚙", command=self.open_settings, font=("DejaVu Sans", 22), fg=self.muted, bg=self.navy, activebackground=self.navy, activeforeground="#ffffff", relief="flat", bd=0).pack(side="right", padx=24)
 
+        # Arrange cycle controls, camera preview, and runtime settings.
         content = tk.Frame(self.root, bg=self.navy)
         content.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=16, pady=12)
         content.grid_columnconfigure(1, weight=1)
         controls_frame = tk.Frame(content, bg=self.panel, highlightbackground=self.panel_border, highlightthickness=1)
         controls_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-        self.start_button = tk.Button(controls_frame, text="▶  START", command=self.start_program, font=("DejaVu Sans", 15, "bold"), fg="#ffffff", bg=self.green, activebackground="#0fb96b", width=12, height=2, relief="flat")
+        self.start_button = tk.Button(controls_frame, text="▶  START", command=self.start_program, font=("DejaVu Sans", 15, "bold"), fg=self.icon_green, bg=self.dark_button, activeforeground=self.icon_green, activebackground="#2a486b", width=12, height=2, relief="flat")
         self.start_button.pack(fill="x", padx=16, pady=(20, 10))
         self.camera_toggle_button = tk.Button(controls_frame, textvariable=self.camera_toggle_text, command=self.toggle_camera, font=("DejaVu Sans", 12, "bold"), fg="#ffffff", bg=self.dark_button, activebackground="#1677d4", relief="flat", width=12, height=2)
         self.camera_toggle_button.pack(fill="x", padx=16, pady=(20, 10))
+        self.end_button = tk.Button(controls_frame, text="END", command=self.close_program, font=("DejaVu Sans", 12, "bold"), fg="#ffffff", bg="#8f2638", activebackground="#b52f45", relief="flat", width=12, height=2)
+        self.end_button.pack(fill="x", padx=16, pady=(20, 10))
 
         preview_frame = tk.Frame(content, width=410, height=230, bg="#152334", highlightbackground=self.light_blue, highlightcolor=self.light_blue, highlightthickness=3)
         preview_frame.pack_propagate(False)
@@ -86,6 +98,7 @@ class AutoLottoApp:
         tk.Label(runtime_value_frame, text="min", font=("DejaVu Sans", 15), fg=self.muted, bg=self.navy).pack(side="left", pady=(16, 0))
         tk.Label(runtime_frame, textvariable=self.elapsed_text, font=("DejaVu Sans", 12), fg=self.muted, bg=self.panel).pack(anchor="w", padx=18, pady=(0, 12))
 
+        # Show live status, drawn values, and cycle count.
         footer = tk.Frame(self.root, bg=self.panel, highlightbackground=self.panel_border, highlightthickness=1)
         footer.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=18, pady=(0, 14))
         status_section = tk.Frame(footer, bg=self.panel)
@@ -107,9 +120,11 @@ class AutoLottoApp:
         self.root.grid_columnconfigure(1, weight=1)
         self.root.grid_columnconfigure(2, weight=1)
 
+    # Adjust the selected runtime by one configured step.
     def change_runtime(self, amount):
         self.runtime_minutes.set(max(RUNTIME_STEP_MINUTES, self.runtime_minutes.get() + amount))
 
+    # Open the modal runtime settings dialog.
     def open_settings(self):
         settings_window = tk.Toplevel(self.root)
         settings_window.title("Settings")
@@ -128,6 +143,7 @@ class AutoLottoApp:
         tk.Button(stepper, text="+", command=lambda: self.change_runtime(RUNTIME_STEP_MINUTES), **options).pack(side="left", expand=True, fill="x", padx=(8, 0))
         tk.Button(settings_window, text="DONE", command=settings_window.destroy, font=("DejaVu Sans", 12, "bold"), fg="#ffffff", bg=self.light_blue, activebackground="#1a759f", relief="flat", width=12, height=1).pack(pady=(0, 16))
 
+    # Refresh the camera preview without blocking the Tk event loop.
     def update_camera_preview(self):
         if self.camera_enabled:
             frame = self.camera.read_frame()
@@ -143,32 +159,48 @@ class AutoLottoApp:
             self.preview_label.image = None
         self.root.after(100, self.update_camera_preview)
 
+    # Refresh the elapsed runtime display once per second.
     def update_elapsed_time(self):
         if self.run_start_time is not None:
             elapsed_minutes = int((time.time() - self.run_start_time) // 60)
             self.elapsed_text.set(f"Elapsed Time: {elapsed_minutes} min")
         self.root.after(1000, self.update_elapsed_time)
 
-    def update_status(self, message):
-        self.root.after(0, self.status_text.set, f"Status: {message}")
+    # Queue a status update for the Tk event loop.
+    def update_status(self, message, generation=None):
+        if generation is None:
+            generation = self.run_generation
+        self.root.after(0, self._set_status, message, generation)
 
-    def finished(self):
-        self.start_button.config(text="CLOSE", command=self.root.destroy, state="normal", bg=self.light_blue)
-        self.status_text.set("Status: Complete")
+    # Ignore status updates from an older worker run.
+    def _set_status(self, message, generation):
+        if generation == self.run_generation:
+            self.status_text.set(f"Status: {message}")
 
-    def run_program(self):
+    # Restore the start state after a worker run completes.
+    def finished(self, generation):
+        if generation != self.run_generation:
+            return
+        if self.close_requested:
+            self.root.destroy()
+            return
+        self.start_button.config(text="▶  START", command=self.start_program, state="normal", fg=self.icon_green, bg=self.dark_button)
+        self.status_text.set("Status: Ready")
+
+    # Execute repeated controller cycles in the background worker.
+    def run_program(self, stop_event, generation):
         reason = None
         cycle_number = 0
         start_time = time.time()
         self.run_start_time = start_time
         runtime_seconds = self.selected_runtime_seconds
         try:
-            while not self.stop_event.is_set() and time.time() - start_time < runtime_seconds:
+            while not stop_event.is_set() and time.time() - start_time < runtime_seconds:
                 cycle_number += 1
-                self.update_status(f"Starting cycle {cycle_number}")
+                self.update_status(f"Starting cycle {cycle_number}", generation)
                 status, _count, csv_row = self.controller.run_cycle(
-                    self.stop_event,
-                    self.update_status,
+                    stop_event,
+                    lambda message: self.update_status(message, generation),
                     lambda values: self.root.after(0, self.values_text.set, values),
                 )
                 if status == "stopped":
@@ -181,41 +213,51 @@ class AutoLottoApp:
                 if csv_row:
                     self.root.after(0, self.values_text.set, csv_row.split("\t", 1)[-1])
                     csv_output.append_csv_row(csv_row)
-                self.update_status("Ready for next cycle")
+                self.update_status("Ready for next cycle", generation)
             if reason is None:
                 reason = "total runtime reached"
         finally:
-            self.update_status("Stopping systems")
-            self.controller.shutdown(reason)
-            self.update_status("Filtering results")
+            self.update_status("Stopping systems", generation)
+            self.controller.shutdown(reason, stop_event)
+            self.update_status("Filtering results", generation)
             filter_latest_results(DESKTOP_RESULTS_DIR)
             self.controller.cleanup()
-            self.root.after(0, self.finished)
+            self.root.after(0, self.finished, generation)
 
+    # Start a new worker run with a fresh stop event.
     def start_program(self):
-        self.stop_event.clear()
+        self.run_generation += 1
+        generation = self.run_generation
+        self.close_requested = False
+        self.stop_event = threading.Event()
+        stop_event = self.stop_event
         self.selected_runtime_seconds = self.runtime_minutes.get() * 60
         self.run_start_time = time.time()
-        self.start_button.config(text="STOP", command=self.stop_program, bg="#d62828")
-        self.worker = threading.Thread(target=self.run_program, daemon=True)
+        self.start_button.config(text="STOP", command=self.stop_program, fg="#ffffff", bg="#d62828")
+        self.worker = threading.Thread(target=self.run_program, args=(stop_event, generation), daemon=True)
         self.worker.start()
 
+    # Toggle camera capture and update the control appearance.
     def toggle_camera(self):
         self.camera_enabled = not self.camera_enabled
-        self.camera_toggle_text.set("▣  WEBCAM ON" if self.camera_enabled else "◩  WEBCAM OFF")
+        self.camera_toggle_text.set("▣  CAMERA ON" if self.camera_enabled else "◩  CAMERA OFF")
         self.camera_toggle_button.config(bg=self.bright_blue if self.camera_enabled else self.dark_button)
 
+    # Request that the active worker stop at its next interruptible point.
     def stop_program(self):
         self.stop_event.set()
         self.start_button.config(state="disabled")
         self.status_text.set("Status: Stopping...")
 
+    # Stop active work and close the application window.
     def close_program(self):
+        self.close_requested = True
         if self.worker is not None and self.worker.is_alive():
             self.stop_program()
             return
         self.controller.cleanup()
         self.root.destroy()
 
+    # Enter the Tk event loop.
     def run(self):
         self.root.mainloop()

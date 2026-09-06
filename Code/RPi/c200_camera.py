@@ -8,6 +8,7 @@ import cv2
 
 
 def make_detector():
+    # Select the first available AprilTag detector implementation.
     try:
         import apriltag as at
 
@@ -28,6 +29,7 @@ def make_detector():
 
 
 def format_detection(detection):
+    # Normalize detector-specific fields into one common tuple.
     tag_id = getattr(detection, "tag_id", None)
     if tag_id is None:
         tag_id = getattr(detection, "id", None)
@@ -40,6 +42,7 @@ def format_detection(detection):
 
 
 class C200Camera:
+    # Coordinate camera capture, detection, logging, and tag collection.
     def __init__(
         self,
         camera_index=0,
@@ -70,11 +73,13 @@ class C200Camera:
         self.log(f"Camera log: {self.log_path}")
         self.log(f"Using detector: {self.detector_name}")
 
+    # Write camera messages to both the console and the session log.
     def log(self, message, error=False):
         stream = sys.stderr if error else sys.stdout
         print(message, file=stream, flush=True)
         print(message, file=self.log_file, flush=True)
 
+    # Capture a frame, detect tags, and periodically log observations.
     def read_detections(self):
         with self.capture_lock:
             ret, frame = self.capture.read()
@@ -97,11 +102,13 @@ class C200Camera:
                 )
         return detections
 
+    # Return the latest raw camera frame for the live preview.
     def read_frame(self):
         with self.capture_lock:
             ret, frame = self.capture.read()
         return frame if ret else None
 
+    # Return the currently visible tag identifiers.
     def read_tag_ids(self):
         detections = self.read_detections()
         if detections is None:
@@ -112,6 +119,7 @@ class C200Camera:
             if format_detection(detection)[0] is not None
         }
 
+    # Wait for one previously unseen tag or an interruption/timeout.
     def wait_for_new_tag(
         self,
         previous_visible_tags,
@@ -136,19 +144,21 @@ class C200Camera:
             new_tags = visible_tags - set(previous_visible_tags) - set(confirmed_tags)
             if len(new_tags) == 1:
                 new_candidate = next(iter(new_tags))
-                if new_candidate == candidate:
-                    candidate_frames += 1
-                else:
-                    candidate = new_candidate
-                    candidate_frames = 1
-                if candidate_frames >= stable_frames:
-                    return candidate, visible_tags
+                return new_candidate, visible_tags
+                # if new_candidate == candidate:
+                #     candidate_frames += 1
+                # else:
+                #     candidate = new_candidate
+                #     candidate_frames = 1
+                # if candidate_frames >= stable_frames:
+                #     return candidate, visible_tags
             else:
                 candidate = None
                 candidate_frames = 0
             time.sleep(poll_interval)
         return None, last_visible_tags
 
+    # Collect a fixed number of detected tag values within a time limit.
     def collect_tag_values(self, timeout=5.0, minimum_values=5):
         collected = []
         deadline = time.monotonic() + timeout
@@ -162,6 +172,7 @@ class C200Camera:
             )
         return collected[:minimum_values]
 
+    # Release camera resources and close the camera log.
     def close(self):
         self.capture.release()
         self.log_file.close()

@@ -5,6 +5,7 @@ DESKTOP_RESULTS_DIR = os.path.join(os.path.expanduser('~'), 'Desktop', 'Results'
 CSV_OUTPUT_PATH = None
 
 
+# Create a timestamped output file for the current run.
 def initialize_csv_output():
     global CSV_OUTPUT_PATH
     os.makedirs(DESKTOP_RESULTS_DIR, exist_ok=True)
@@ -15,6 +16,7 @@ def initialize_csv_output():
     return CSV_OUTPUT_PATH
 
 
+# Append one completed cycle to the active output file.
 def append_csv_row(csv_row, output_path=None):
     if not csv_row:
         return False

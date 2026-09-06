@@ -9,11 +9,13 @@ from motion_control import setup_gpio
 
 
 class AutoLottoApplication:
+    # Own the application startup sequence and top-level window.
     def __init__(self):
         self.root = tk.Tk()
         self.camera = None
         self.controller = None
 
+    # Initialize hardware, output storage, controller, and GUI dependencies.
     def initialize(self):
         try:
             self.camera = C200Camera()
@@ -28,6 +30,7 @@ class AutoLottoApplication:
         self.gui = AutoLottoApp(self.root, self.camera, self.controller)
         return True
 
+    # Show a recoverable startup error when required hardware is unavailable.
     def _show_initialization_error(self, error):
         self.root.title("AutoLotto")
         self.root.geometry("800x480")
@@ -46,6 +49,7 @@ class AutoLottoApplication:
             font=("Helvetica", 24, "bold"),
         ).pack(pady=40, ipadx=40, ipady=20)
 
+    # Start the GUI event loop after initialization succeeds or fails.
     def run(self):
         if self.initialize():
             self.gui.run()

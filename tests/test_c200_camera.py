@@ -23,6 +23,7 @@ class FakeCapture:
 
 
 class C200CameraTests(unittest.TestCase):
+    # Confirm that a new tag is returned after the camera observes it.
     def test_waits_for_a_new_stable_tag(self):
         detections = iter(
             [
@@ -51,6 +52,7 @@ class C200CameraTests(unittest.TestCase):
             self.assertEqual(value, "23")
             self.assertEqual(visible_tags, {"23"})
 
+    # Confirm collection returns values and creates a timestamped camera log.
     def test_collects_tag_ids_and_writes_timestamped_log(self):
         with tempfile.TemporaryDirectory() as tempdir:
             camera = C200Camera(

@@ -6,6 +6,7 @@ from Code.RPi.results_filter import filter_latest_results
 
 
 class ResultsFilterTests(unittest.TestCase):
+    # Preserve first-seen order while removing duplicate values from each row.
     def test_filters_each_row_in_first_seen_order(self):
         with tempfile.TemporaryDirectory() as tempdir:
             results_path = Path(tempdir) / "2026-09-03_12-00-00.csv"
@@ -27,6 +28,7 @@ class ResultsFilterTests(unittest.TestCase):
                 "2026-09-03 12:01:00\t7,8,9\n",
             )
 
+    # Keep existing filtered output from being treated as raw input.
     def test_ignores_existing_filtered_results(self):
         with tempfile.TemporaryDirectory() as tempdir:
             results_path = Path(tempdir) / "2026-09-03_12-00-00.csv"

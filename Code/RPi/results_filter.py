@@ -1,6 +1,7 @@
 from pathlib import Path
 
 
+# Filter the newest raw results file into a deduplicated companion file.
 def filter_latest_results(results_dir):
     results_path = _latest_results_path(Path(results_dir))
     if results_path is None:
@@ -18,6 +19,7 @@ def filter_latest_results(results_dir):
     return filtered_path
 
 
+# Locate the newest unfiltered CSV result file.
 def _latest_results_path(results_dir):
     result_paths = [
         path
@@ -27,6 +29,7 @@ def _latest_results_path(results_dir):
     return max(result_paths, key=lambda path: path.stat().st_mtime) if result_paths else None
 
 
+# Remove duplicate values from one tab-separated result row.
 def _filter_result_line(line):
     line_ending = "\n" if line.endswith("\n") else ""
     content = line[:-1] if line_ending else line

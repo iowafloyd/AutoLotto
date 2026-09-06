@@ -7,6 +7,10 @@
 - Moved GUI construction, runtime settings, camera preview, status updates, and worker-thread management into `gui.py`.
 - Added `application.py` to coordinate camera, GPIO, CSV output, the cycle controller, and the GUI.
 - Reduced `main.py` to a thin application entry point.
+- Added the 64x64 green AutoLotto icon and refreshed the GUI branding, tagline, and matching control colors.
+- Added explicit camera and end controls, plus safer worker lifecycle handling for stopping and closing runs.
+- Added an actuator alignment step before ball collection and tuned the ball-step timing for first-ball detection.
+- Expanded camera and result-filter tests for tag collection, timestamped logs, duplicate filtering, and output handling.
 
 ## Version 2.2
 
