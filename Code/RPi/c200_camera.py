@@ -6,6 +6,11 @@ from pathlib import Path
 
 import cv2
 
+try:
+    from .tag_diagnostics import TagDiagnostics
+except ImportError:
+    from tag_diagnostics import TagDiagnostics
+
 
 def make_detector():
     # Select the first available AprilTag detector implementation.
@@ -70,8 +75,19 @@ class C200Camera:
         self.log_file = self.log_path.open("w", encoding="utf-8")
         self.max_log_fps = max(0.001, max_log_fps)
         self.last_log = 0.0
+        self.diagnostics = TagDiagnostics(log_dir)
         self.log(f"Camera log: {self.log_path}")
         self.log(f"Using detector: {self.detector_name}")
+
+    # Enable or disable structured AprilTag diagnostics for the current run.
+    def set_tag_diagnostics_enabled(self, enabled):
+        log_path = self.diagnostics.set_enabled(enabled)
+        if enabled and log_path is not None:
+            self.log(f"Tag diagnostics: {log_path}")
+
+    # Attach collection context to subsequent diagnostic records.
+    def set_diagnostic_context(self, **context):
+        self.diagnostics.set_context(**context)
 
     # Write camera messages to both the console and the session log.
     def log(self, message, error=False):
@@ -89,6 +105,18 @@ class C200Camera:
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         detections = self.detect(gray)
+        self.diagnostics.record(
+            "detections",
+            detections=[
+                {
+                    "tag_id": format_detection(detection)[0],
+                    "center": format_detection(detection)[1],
+                    "corners": format_detection(detection)[2],
+                    "margin": format_detection(detection)[3],
+                }
+                for detection in detections
+            ],
+        )
         now = time.monotonic()
         if now - self.last_log >= 1.0 / self.max_log_fps:
             self.last_log = now
@@ -133,8 +161,19 @@ class C200Camera:
         candidate = None
         candidate_frames = 0
         last_visible_tags = set(previous_visible_tags)
+        self.diagnostics.record(
+            "wait_started",
+            previous_visible_tags=sorted(previous_visible_tags),
+            confirmed_tags=sorted(confirmed_tags),
+            timeout=timeout,
+        )
         while time.monotonic() < deadline:
             if stop_event is not None and stop_event.is_set():
+                self.diagnostics.record(
+                    "tag_decision",
+                    outcome="stopped",
+                    visible_tags=sorted(last_visible_tags),
+                )
                 return None, last_visible_tags
             visible_tags = self.read_tag_ids()
             if visible_tags is None:
@@ -144,6 +183,13 @@ class C200Camera:
             new_tags = visible_tags - set(previous_visible_tags) - set(confirmed_tags)
             if len(new_tags) == 1:
                 new_candidate = next(iter(new_tags))
+                self.diagnostics.record(
+                    "tag_decision",
+                    outcome="accepted",
+                    tag_id=new_candidate,
+                    visible_tags=sorted(visible_tags),
+                    new_tags=sorted(new_tags),
+                )
                 return new_candidate, visible_tags
                 # if new_candidate == candidate:
                 #     candidate_frames += 1
@@ -156,6 +202,14 @@ class C200Camera:
                 candidate = None
                 candidate_frames = 0
             time.sleep(poll_interval)
+        self.diagnostics.record(
+            "tag_decision",
+            outcome="timeout",
+            visible_tags=sorted(last_visible_tags),
+            new_tags=sorted(
+                last_visible_tags - set(previous_visible_tags) - set(confirmed_tags)
+            ),
+        )
         return None, last_visible_tags
 
     # Collect a fixed number of detected tag values within a time limit.
@@ -175,4 +229,5 @@ class C200Camera:
     # Release camera resources and close the camera log.
     def close(self):
         self.capture.release()
+        self.diagnostics.close()
         self.log_file.close()

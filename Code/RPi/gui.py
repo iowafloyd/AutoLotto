@@ -41,6 +41,9 @@ class AutoLottoApp:
         self.values_text = tk.StringVar(value="")
         self.camera_toggle_text = tk.StringVar(value="◩  CAMERA OFF")
         self.runtime_minutes = tk.IntVar(value=DEFAULT_RUNTIME_MINUTES)
+        self.tag_diagnostics_enabled = tk.BooleanVar(
+            value=self.camera.diagnostics.enabled
+        )
         self.elapsed_text = tk.StringVar(value="Elapsed Time: 0 min")
         self.stop_event = threading.Event()
         self.run_generation = 0
@@ -128,7 +131,7 @@ class AutoLottoApp:
     def open_settings(self):
         settings_window = tk.Toplevel(self.root)
         settings_window.title("Settings")
-        settings_window.geometry("360x250")
+        settings_window.geometry("360x300")
         settings_window.resizable(False, False)
         settings_window.configure(bg=self.panel)
         settings_window.transient(self.root)
@@ -141,7 +144,23 @@ class AutoLottoApp:
         tk.Button(stepper, text="−", command=lambda: self.change_runtime(-RUNTIME_STEP_MINUTES), **options).pack(side="left", expand=True, fill="x", padx=(0, 8))
         tk.Label(stepper, textvariable=self.runtime_minutes, font=("DejaVu Sans", 24, "bold"), width=5, fg="#ffffff", bg=self.navy).pack(side="left", padx=8, ipady=5)
         tk.Button(stepper, text="+", command=lambda: self.change_runtime(RUNTIME_STEP_MINUTES), **options).pack(side="left", expand=True, fill="x", padx=(8, 0))
+        tk.Checkbutton(
+            settings_window,
+            text="Enable tag diagnostics",
+            variable=self.tag_diagnostics_enabled,
+            command=self.toggle_tag_diagnostics,
+            font=("DejaVu Sans", 11),
+            fg="#ffffff",
+            bg=self.panel,
+            activeforeground="#ffffff",
+            activebackground=self.panel,
+            selectcolor=self.navy,
+        ).pack(anchor="w", padx=28, pady=(4, 16))
         tk.Button(settings_window, text="DONE", command=settings_window.destroy, font=("DejaVu Sans", 12, "bold"), fg="#ffffff", bg=self.light_blue, activebackground="#1a759f", relief="flat", width=12, height=1).pack(pady=(0, 16))
+
+    # Toggle structured AprilTag recording without opening another camera reader.
+    def toggle_tag_diagnostics(self):
+        self.camera.set_tag_diagnostics_enabled(self.tag_diagnostics_enabled.get())
 
     # Refresh the camera preview without blocking the Tk event loop.
     def update_camera_preview(self):

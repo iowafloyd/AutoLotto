@@ -60,10 +60,14 @@ class CycleController:
         print("Beginning ball extraction")
         cycle_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         cycle_values = []
+        self.camera.set_diagnostic_context(phase="initial_visibility")
         previous_visible_tags = self.camera.read_tag_ids() or set()
 
         # Extract and confirm each ball, stopping on interruption or timeout.
         for step in range(NUM_STEPS):
+            self.camera.set_diagnostic_context(
+                phase="ball_confirmation", step=step + 1
+            )
             status_callback(f"Collecting ball {step + 1} of {NUM_STEPS}")
             actuator_retract()
 
@@ -75,12 +79,11 @@ class CycleController:
                 return "stopped", None, None
             motor_stop()
 
-            if step == 0:
-                print("Motor jog after first ball retraction...")
-                motor_run()
-                if sleep_interruptible(MOTOR_JOG_TIME, stop_event):
-                    return "stopped", None, None
-                motor_stop()
+            print("Motor jog before ball confirmation...")
+            motor_run()
+            if sleep_interruptible(MOTOR_JOG_TIME, stop_event):
+                return "stopped", None, None
+            motor_stop()
 
             status_callback("Waiting for ball confirmation")
             confirmed_tag, visible_tags = self.camera.wait_for_new_tag(

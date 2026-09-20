@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -72,6 +73,29 @@ class C200CameraTests(unittest.TestCase):
                 r"^c200_camera_\d{8}_\d{6}_\d{6}\.log$",
             )
             self.assertIn("Detections: 1", Path(camera.log_path).read_text())
+
+    # Confirm optional diagnostics capture detections and acceptance decisions.
+    def test_tag_diagnostics_records_detection_and_decision(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            camera = C200Camera(
+                log_dir=tempdir,
+                detector=lambda _gray: [
+                    SimpleNamespace(tag_id=23, center=(1, 2), corners=[[1, 2]])
+                ],
+                capture=FakeCapture([object(), object()]),
+            )
+            camera.set_tag_diagnostics_enabled(True)
+            camera.set_diagnostic_context(phase="ball_confirmation", step=5)
+
+            with patch("Code.RPi.c200_camera.cv2.cvtColor", side_effect=lambda frame, _mode: frame):
+                value, _visible_tags = camera.wait_for_new_tag(set(), set(), poll_interval=0)
+            diagnostics_path = camera.diagnostics.log_path
+            camera.close()
+
+            events = [json.loads(line)["event"] for line in diagnostics_path.read_text().splitlines()]
+            self.assertEqual(value, "23")
+            self.assertIn("detections", events)
+            self.assertIn("tag_decision", events)
 
 
 if __name__ == "__main__":
