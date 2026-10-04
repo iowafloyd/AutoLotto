@@ -2,6 +2,9 @@
 
 This project uses a timed sequence of actuator and motor actions during each cycle. The following summary documents the current timing behavior for troubleshooting.
 
+For a graphical overview of the GUI lifecycle and the motion-control/camera
+sequence, see [PROCESS_FLOWS.md](PROCESS_FLOWS.md).
+
 ## Desktop launcher
 
 The Raspberry Pi GUI can be launched from a desktop icon and started automatically with the graphical desktop session.

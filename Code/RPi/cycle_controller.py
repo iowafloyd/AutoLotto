@@ -94,8 +94,21 @@ class CycleController:
             if confirmed_tag is None:
                 if stop_event.is_set():
                     return "stopped", None, None
-                status_callback("Ball confirmation timed out")
-                return "timeout", None, None
+                status_callback("No new ball detected; jogging motor again")
+                motor_run()
+                if sleep_interruptible(MOTOR_JOG_TIME, stop_event):
+                    return "stopped", None, None
+                motor_stop()
+                confirmed_tag, visible_tags = self.camera.wait_for_new_tag(
+                    previous_visible_tags,
+                    cycle_values,
+                    stop_event=stop_event,
+                )
+                if confirmed_tag is None:
+                    if stop_event.is_set():
+                        return "stopped", None, None
+                    status_callback("Ball confirmation timed out")
+                    return "timeout", None, None
 
             cycle_values.append(confirmed_tag)
             previous_visible_tags = visible_tags
@@ -131,3 +144,8 @@ class CycleController:
         gpio_cleanup()
         self.camera.close()
         print("Clean shutdown")
+
+    # Stop actuator and motor outputs if normal worker shutdown is stuck.
+    def emergency_stop(self):
+        actuator_stop()
+        motor_stop()

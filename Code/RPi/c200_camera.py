@@ -175,14 +175,22 @@ class C200Camera:
                     visible_tags=sorted(last_visible_tags),
                 )
                 return None, last_visible_tags
-            visible_tags = self.read_tag_ids()
-            if visible_tags is None:
+            detections = self.read_detections()
+            if detections is None:
                 time.sleep(poll_interval)
                 continue
+            ordered_visible_tags = [
+                str(tag_id)
+                for detection in detections
+                if (tag_id := format_detection(detection)[0]) is not None
+            ]
+            visible_tags = set(ordered_visible_tags)
             last_visible_tags = visible_tags
             new_tags = visible_tags - set(previous_visible_tags) - set(confirmed_tags)
-            if len(new_tags) == 1:
-                new_candidate = next(iter(new_tags))
+            if new_tags:
+                new_candidate = next(
+                    tag_id for tag_id in ordered_visible_tags if tag_id in new_tags
+                )
                 self.diagnostics.record(
                     "tag_decision",
                     outcome="accepted",
@@ -191,13 +199,6 @@ class C200Camera:
                     new_tags=sorted(new_tags),
                 )
                 return new_candidate, visible_tags
-                # if new_candidate == candidate:
-                #     candidate_frames += 1
-                # else:
-                #     candidate = new_candidate
-                #     candidate_frames = 1
-                # if candidate_frames >= stable_frames:
-                #     return candidate, visible_tags
             else:
                 candidate = None
                 candidate_frames = 0

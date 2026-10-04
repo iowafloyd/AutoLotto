@@ -53,6 +53,26 @@ class C200CameraTests(unittest.TestCase):
             self.assertEqual(value, "23")
             self.assertEqual(visible_tags, {"23"})
 
+    # Confirm the first unseen detection wins when multiple tags appear together.
+    def test_accepts_first_new_tag_when_multiple_are_visible(self):
+        detections = [
+            SimpleNamespace(tag_id=42),
+            SimpleNamespace(tag_id=11),
+        ]
+        with tempfile.TemporaryDirectory() as tempdir:
+            camera = C200Camera(
+                log_dir=tempdir,
+                detector=lambda _gray: detections,
+                capture=FakeCapture([object()]),
+            )
+
+            with patch("Code.RPi.c200_camera.cv2.cvtColor", side_effect=lambda frame, _mode: frame):
+                value, visible_tags = camera.wait_for_new_tag(set(), set(), poll_interval=0)
+            camera.close()
+
+            self.assertEqual(value, "42")
+            self.assertEqual(visible_tags, {"42", "11"})
+
     # Confirm collection returns values and creates a timestamped camera log.
     def test_collects_tag_ids_and_writes_timestamped_log(self):
         with tempfile.TemporaryDirectory() as tempdir:

@@ -16,6 +16,8 @@ from results_filter import filter_latest_results
 
 
 class AutoLottoApp:
+    CLOSE_WORKER_GRACE_MS = 10000
+
     # Own the operator-facing window and coordinate GUI callbacks.
     def __init__(self, root, camera, controller):
         self.root = root
@@ -49,7 +51,12 @@ class AutoLottoApp:
         self.run_generation = 0
         self.worker = None
         self.close_requested = False
+        self.close_timeout_id = None
         self.camera_enabled = False
+        self.preview_lock = threading.Lock()
+        self.preview_reading = False
+        self.preview_frame = None
+        self.run_error = None
         self.selected_runtime_seconds = DEFAULT_RUNTIME_MINUTES * 60
         self.run_start_time = None
         self._build_layout()
@@ -165,7 +172,9 @@ class AutoLottoApp:
     # Refresh the camera preview without blocking the Tk event loop.
     def update_camera_preview(self):
         if self.camera_enabled:
-            frame = self.camera.read_frame()
+            self._request_preview_frame()
+            with self.preview_lock:
+                frame = self.preview_frame
             if frame is not None:
                 frame = cv2.resize(frame, (410, 224))
                 success, encoded = cv2.imencode(".png", frame)
@@ -177,6 +186,27 @@ class AutoLottoApp:
             self.preview_label.configure(image="")
             self.preview_label.image = None
         self.root.after(100, self.update_camera_preview)
+
+    # Read a camera frame away from the Tk event thread.
+    def _request_preview_frame(self):
+        with self.preview_lock:
+            if self.preview_reading:
+                return
+            self.preview_reading = True
+        threading.Thread(target=self._read_preview_frame, daemon=True).start()
+
+    # Publish the latest preview frame for the Tk event thread to render.
+    def _read_preview_frame(self):
+        frame = None
+        try:
+            frame = self.camera.read_frame()
+        except Exception:
+            pass
+        finally:
+            with self.preview_lock:
+                if frame is not None:
+                    self.preview_frame = frame
+                self.preview_reading = False
 
     # Refresh the elapsed runtime display once per second.
     def update_elapsed_time(self):
@@ -201,10 +231,13 @@ class AutoLottoApp:
         if generation != self.run_generation:
             return
         if self.close_requested:
-            self.root.destroy()
+            self._destroy_window()
             return
         self.start_button.config(text="▶  START", command=self.start_program, state="normal", fg=self.icon_green, bg=self.dark_button)
-        self.status_text.set("Status: Ready")
+        if self.run_error:
+            self.status_text.set(f"Status: Error: {self.run_error}")
+        else:
+            self.status_text.set("Status: Ready")
 
     # Execute repeated controller cycles in the background worker.
     def run_program(self, stop_event, generation):
@@ -213,6 +246,7 @@ class AutoLottoApp:
         start_time = time.time()
         self.run_start_time = start_time
         runtime_seconds = self.selected_runtime_seconds
+        self.run_error = None
         try:
             while not stop_event.is_set() and time.time() - start_time < runtime_seconds:
                 cycle_number += 1
@@ -235,19 +269,34 @@ class AutoLottoApp:
                 self.update_status("Ready for next cycle", generation)
             if reason is None:
                 reason = "total runtime reached"
+        except Exception as exc:
+            self.run_error = str(exc)
+            reason = "program error"
         finally:
-            self.update_status("Stopping systems", generation)
-            self.controller.shutdown(reason, stop_event)
-            self.update_status("Filtering results", generation)
-            filter_latest_results(DESKTOP_RESULTS_DIR)
-            self.controller.cleanup()
-            self.root.after(0, self.finished, generation)
+            try:
+                self.update_status("Stopping systems", generation)
+                self.controller.shutdown(reason, stop_event)
+                self.update_status("Filtering results", generation)
+                filter_latest_results(DESKTOP_RESULTS_DIR)
+            except Exception as exc:
+                self.run_error = str(exc)
+            finally:
+                try:
+                    self.controller.cleanup()
+                except Exception as exc:
+                    self.run_error = str(exc)
+                finally:
+                    try:
+                        self.root.after(0, self.finished, generation)
+                    except tk.TclError:
+                        pass
 
     # Start a new worker run with a fresh stop event.
     def start_program(self):
         self.run_generation += 1
         generation = self.run_generation
         self.close_requested = False
+        self.close_timeout_id = None
         self.stop_event = threading.Event()
         stop_event = self.stop_event
         self.selected_runtime_seconds = self.runtime_minutes.get() * 60
@@ -270,11 +319,49 @@ class AutoLottoApp:
 
     # Stop active work and close the application window.
     def close_program(self):
+        if self.close_requested:
+            return
         self.close_requested = True
         if self.worker is not None and self.worker.is_alive():
             self.stop_program()
+            self.close_timeout_id = self.root.after(
+                self.CLOSE_WORKER_GRACE_MS, self._force_close_if_worker_stuck
+            )
             return
-        self.controller.cleanup()
+        try:
+            self.controller.emergency_stop()
+        except Exception:
+            pass
+        threading.Thread(target=self._cleanup_after_close, daemon=True).start()
+        self._destroy_window()
+
+    # Release camera and GPIO resources without blocking Tk during close.
+    def _cleanup_after_close(self):
+        try:
+            self.controller.cleanup()
+        except Exception:
+            pass
+
+    # Stop hardware and close if a worker remains stuck after the grace period.
+    def _force_close_if_worker_stuck(self):
+        self.close_timeout_id = None
+        if not self.close_requested or self.worker is None or not self.worker.is_alive():
+            return
+        try:
+            self.controller.emergency_stop()
+        except Exception:
+            pass
+        finally:
+            self._destroy_window()
+
+    # Destroy the window and cancel any pending forced-close callback.
+    def _destroy_window(self):
+        if self.close_timeout_id is not None:
+            try:
+                self.root.after_cancel(self.close_timeout_id)
+            except tk.TclError:
+                pass
+            self.close_timeout_id = None
         self.root.destroy()
 
     # Enter the Tk event loop.
