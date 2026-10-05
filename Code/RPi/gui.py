@@ -109,8 +109,8 @@ class AutoLottoApp:
         tk.Label(runtime_frame, textvariable=self.elapsed_text, font=("DejaVu Sans", 12), fg=self.muted, bg=self.panel).pack(anchor="w", padx=18, pady=(0, 12))
 
         # Show live status, drawn values, and cycle count.
-        footer = tk.Frame(self.root, bg=self.panel, highlightbackground=self.panel_border, highlightthickness=1)
-        footer.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=18, pady=(0, 14))
+        footer = tk.Frame(self.root, bg=self.panel, highlightbackground=self.panel_border, highlightthickness=1) # <-- CHECK THESE ON TOUCHSCREEN
+        footer.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=18, pady=(5, 14)) # <-- CHECK THESE ON TOUCHSCREEN
         status_section = tk.Frame(footer, bg=self.panel)
         status_section.pack(side="left", fill="y", padx=22, pady=10)
         tk.Label(status_section, textvariable=self.status_text, font=("DejaVu Sans", 18, "bold"), fg=self.green, bg=self.panel).pack(anchor="w", pady=8)
@@ -282,7 +282,7 @@ class AutoLottoApp:
                 self.run_error = str(exc)
             finally:
                 try:
-                    self.controller.cleanup()
+                    self.controller.cleanup(release_resources=self.close_requested)
                 except Exception as exc:
                     self.run_error = str(exc)
                 finally:

@@ -9,6 +9,36 @@ import cycle_controller
 
 
 class CycleControllerTests(unittest.TestCase):
+    def test_run_cleanup_keeps_gpio_and_camera_available(self):
+        camera = MagicMock()
+        controller = cycle_controller.CycleController(camera)
+
+        with (
+            patch.object(cycle_controller, "actuator_stop") as actuator_stop,
+            patch.object(cycle_controller, "motor_stop") as motor_stop,
+            patch.object(cycle_controller, "gpio_cleanup") as gpio_cleanup,
+        ):
+            controller.cleanup(release_resources=False)
+
+        actuator_stop.assert_called_once_with()
+        motor_stop.assert_called_once_with()
+        gpio_cleanup.assert_not_called()
+        camera.close.assert_not_called()
+
+    def test_final_cleanup_releases_gpio_and_camera(self):
+        camera = MagicMock()
+        controller = cycle_controller.CycleController(camera)
+
+        with (
+            patch.object(cycle_controller, "actuator_stop"),
+            patch.object(cycle_controller, "motor_stop"),
+            patch.object(cycle_controller, "gpio_cleanup") as gpio_cleanup,
+        ):
+            controller.cleanup()
+
+        gpio_cleanup.assert_called_once_with()
+        camera.close.assert_called_once_with()
+
     def test_jogs_again_and_retries_when_no_new_tag_is_detected(self):
         camera = MagicMock()
         camera.read_tag_ids.return_value = {"old"}

@@ -137,13 +137,16 @@ class CycleController:
         actuator_stop()
         log_completion(reason)
 
-    # Release all hardware resources after the run has ended.
-    def cleanup(self):
+    # Stop outputs after a run and optionally release application resources.
+    def cleanup(self, release_resources=True):
         actuator_stop()
         motor_stop()
-        gpio_cleanup()
-        self.camera.close()
-        print("Clean shutdown")
+        if release_resources:
+            gpio_cleanup()
+            self.camera.close()
+            print("Clean shutdown")
+        else:
+            print("Run outputs stopped")
 
     # Stop actuator and motor outputs if normal worker shutdown is stuck.
     def emergency_stop(self):
