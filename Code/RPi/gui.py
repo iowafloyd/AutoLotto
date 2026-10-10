@@ -15,6 +15,25 @@ from config import (
 from results_filter import filter_latest_results
 
 
+ROW_GAP = 15
+
+
+def grid_row(widget, row, column=0, columnspan=1, sticky="nsew", padx=0, pady=None):
+    if pady is None:
+        if row < 2:
+            pady = (0, ROW_GAP)
+        else:
+            pady = (ROW_GAP, ROW_GAP)
+    widget.grid(
+        row=row,
+        column=column,
+        columnspan=columnspan,
+        sticky=sticky,
+        padx=padx,
+        pady=pady,
+    )
+
+
 class AutoLottoApp:
     CLOSE_WORKER_GRACE_MS = 10000
 
@@ -68,7 +87,7 @@ class AutoLottoApp:
     def _build_layout(self):
         # Display branding, the icon, and application settings access.
         header = tk.Frame(self.root, bg=self.navy, height=72)
-        header.grid(row=0, column=0, columnspan=3, sticky="nsew")
+        grid_row(header, row=0, column=0, columnspan=3, sticky="nsew")
         header.grid_propagate(False)
         icon_path = Path(__file__).resolve().parents[2] / "img" / "AL_green_small.png"
         self.logo_image = tk.PhotoImage(file=str(icon_path))
@@ -82,7 +101,7 @@ class AutoLottoApp:
 
         # Arrange cycle controls, camera preview, and runtime settings.
         content = tk.Frame(self.root, bg=self.navy)
-        content.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=16, pady=12)
+        grid_row(content, row=1, column=0, columnspan=3, sticky="nsew", padx=16)
         content.grid_columnconfigure(1, weight=1)
         controls_frame = tk.Frame(content, bg=self.panel, highlightbackground=self.panel_border, highlightthickness=1)
         controls_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
@@ -109,8 +128,8 @@ class AutoLottoApp:
         tk.Label(runtime_frame, textvariable=self.elapsed_text, font=("DejaVu Sans", 12), fg=self.muted, bg=self.panel).pack(anchor="w", padx=18, pady=(0, 12))
 
         # Show live status, drawn values, and cycle count.
-        footer = tk.Frame(self.root, bg=self.panel, highlightbackground=self.panel_border, highlightthickness=1) # <-- CHECK THESE ON TOUCHSCREEN
-        footer.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=18, pady=(5, 14)) # <-- CHECK THESE ON TOUCHSCREEN
+        footer = tk.Frame(self.root, bg=self.panel, highlightbackground=self.panel_border, highlightthickness=1)
+        grid_row(footer, row=2, column=0, columnspan=3, sticky="nsew", padx=18)
         status_section = tk.Frame(footer, bg=self.panel)
         status_section.pack(side="left", fill="y", padx=22, pady=10)
         tk.Label(status_section, textvariable=self.status_text, font=("DejaVu Sans", 18, "bold"), fg=self.green, bg=self.panel).pack(anchor="w", pady=8)
