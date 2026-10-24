@@ -13,6 +13,7 @@ from motion_control import (
 from terminal_io import sleep_interruptible
 from config import (
     BALL_STEP_PAUSE,
+    BALL_STEP_REST_TIME,
     BALL_STEP_TIME,
     FULL_EXTENSION_TIME,
     FULL_RETRACTION_TIME,
@@ -74,6 +75,8 @@ class CycleController:
             if sleep_interruptible(BALL_STEP_TIME, stop_event):
                 return "stopped", None, None
             actuator_stop()
+            if sleep_interruptible(BALL_STEP_REST_TIME, stop_event):
+                return "stopped", None, None
             motor_run()
             if sleep_interruptible(1.0, stop_event):
                 return "stopped", None, None

@@ -51,7 +51,9 @@ class CycleControllerTests(unittest.TestCase):
 
         with (
             patch.object(cycle_controller, "NUM_STEPS", 1),
-            patch.object(cycle_controller, "sleep_interruptible", return_value=False),
+            patch.object(
+                cycle_controller, "sleep_interruptible", return_value=False
+            ) as sleep_interruptible,
             patch.object(cycle_controller, "actuator_retract"),
             patch.object(cycle_controller, "actuator_extend"),
             patch.object(cycle_controller, "actuator_stop"),
@@ -65,6 +67,14 @@ class CycleControllerTests(unittest.TestCase):
         self.assertEqual(camera.wait_for_new_tag.call_count, 2)
         self.assertEqual(motor_run.call_count, 4)
         self.assertIn("No new ball detected; jogging motor again", statuses)
+        sleep_durations = [
+            call.args[0] for call in sleep_interruptible.call_args_list
+        ]
+        retraction_index = sleep_durations.index(cycle_controller.BALL_STEP_TIME)
+        self.assertEqual(
+            sleep_durations[retraction_index + 1],
+            3 * cycle_controller.BALL_STEP_TIME,
+        )
 
 
 if __name__ == "__main__":

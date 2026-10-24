@@ -17,6 +17,8 @@ From the project directory, run:
 
 This installs `AutoLotto.desktop` on the desktop and in the user's autostart directory. The launcher uses the project's `.venv` Python interpreter and starts `Code/RPi/main.py` without opening a terminal window.
 
+Run CSV files and their filtered versions are saved in the project's `Results/` folder.
+
 ## Cycle timing sequence
 
 1. Full actuator retraction
@@ -32,22 +34,26 @@ This installs `AutoLotto.desktop` on the desktop and in the user's autostart dir
    - Action: run the motor to randomize the balls
 
 4. First ball retraction
-   - Duration: 35/47 seconds (approximately 0.7447 seconds)
+   - Duration: 25/47 seconds (approximately 0.5319 seconds)
    - Action: retract the actuator for one ball-extraction step
 
-5. Motor jog after first ball retraction
+5. Actuator rest after each ball retraction
+   - Duration: three times the retraction duration (approximately 1.5957 seconds)
+   - Action: keep the actuator stopped to maintain its 25% duty cycle
+
+6. Motor jog after first ball retraction
    - Duration: 0.5 seconds
    - Action: briefly spin the motor after the first ball retraction
 
-6. Tag data collection
+7. Tag data collection
    - Timeout: 5.0 seconds
    - Action: collect tag values from the serial interface after each retraction step
 
-7. Motor run to move balls down the tube
+8. Motor run to move balls down the tube
    - Duration: 1.0 second
    - Action: run the motor briefly between extraction steps; this same action is repeated twice in the code before the pause
 
-8. Ball step pause
+9. Ball step pause
    - Duration: 0.1 seconds
    - Action: short pause between extraction steps
 

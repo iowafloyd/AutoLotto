@@ -1,0 +1,2 @@
+{"timestamp": "2026-10-11T14:16:00.561784+00:00", "event": "diagnostics_started", "context": {}, "log_path": "/home/cameron/Dev/AutoLotto/Test/camera_logs/tag_diagnostics_20261011_091600_560937.jsonl"}
+{"timestamp": "2026-10-11T14:17:36.103608+00:00", "event": "diagnostics_stopped", "context": {}}

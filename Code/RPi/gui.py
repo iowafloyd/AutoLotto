@@ -9,7 +9,7 @@ import cv2
 import csv_output
 from config import (
     DEFAULT_RUNTIME_MINUTES,
-    DESKTOP_RESULTS_DIR,
+    RESULTS_DIR,
     RUNTIME_STEP_MINUTES,
 )
 from results_filter import filter_latest_results
@@ -296,7 +296,7 @@ class AutoLottoApp:
                 self.update_status("Stopping systems", generation)
                 self.controller.shutdown(reason, stop_event)
                 self.update_status("Filtering results", generation)
-                filter_latest_results(DESKTOP_RESULTS_DIR)
+                filter_latest_results(RESULTS_DIR)
             except Exception as exc:
                 self.run_error = str(exc)
             finally:

@@ -2,7 +2,6 @@ import tkinter as tk
 
 import csv_output
 from c200_camera import C200Camera
-from config import DESKTOP_RESULTS_DIR
 from cycle_controller import CycleController
 from gui import AutoLottoApp
 from motion_control import setup_gpio
@@ -20,7 +19,6 @@ class AutoLottoApplication:
         try:
             self.camera = C200Camera()
             setup_gpio()
-            csv_output.DESKTOP_RESULTS_DIR = DESKTOP_RESULTS_DIR
             csv_output.initialize_csv_output()
         except (RuntimeError, ImportError) as exc:
             self._show_initialization_error(exc)
