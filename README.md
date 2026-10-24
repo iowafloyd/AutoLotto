@@ -18,6 +18,13 @@ From the project directory, run:
 This installs `AutoLotto.desktop` on the desktop and in the user's autostart directory. The launcher uses the project's `.venv` Python interpreter and starts `Code/RPi/main.py` without opening a terminal window.
 
 Run CSV files and their filtered versions are saved in the project's `Results/` folder.
+The `Results/` folder is tracked in Git. After the selected runtime completes
+without an application or cleanup error, AutoLotto stages and commits changes
+to that folder and pushes the current branch using the repository's configured
+Git remote. Configure GitHub authentication and an upstream branch on the
+device before running; credentials should remain in Git's credential manager
+or SSH configuration, never in the repository or application code. A Git
+commit or push failure is shown as an application error.
 
 ## Cycle timing sequence
 

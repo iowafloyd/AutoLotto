@@ -1,4 +1,6 @@
 import base64
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -261,6 +263,7 @@ class AutoLottoApp:
     # Execute repeated controller cycles in the background worker.
     def run_program(self, stop_event, generation):
         reason = None
+        runtime_completed = False
         cycle_number = 0
         start_time = time.time()
         self.run_start_time = start_time
@@ -287,7 +290,11 @@ class AutoLottoApp:
                     csv_output.append_csv_row(csv_row)
                 self.update_status("Ready for next cycle", generation)
             if reason is None:
-                reason = "total runtime reached"
+                if stop_event.is_set():
+                    reason = "stop button"
+                else:
+                    reason = "total runtime reached"
+                    runtime_completed = time.time() - start_time >= runtime_seconds
         except Exception as exc:
             self.run_error = str(exc)
             reason = "program error"
@@ -305,6 +312,24 @@ class AutoLottoApp:
                 except Exception as exc:
                     self.run_error = str(exc)
                 finally:
+                    if runtime_completed and self.run_error is None:
+                        try:
+                            self.update_status("Committing results", generation)
+                            helper_path = Path(__file__).with_name("commit_results.py")
+                            subprocess.run(
+                                [sys.executable, str(helper_path)],
+                                check=True,
+                                capture_output=True,
+                                text=True,
+                            )
+                        except subprocess.CalledProcessError as exc:
+                            details = (exc.stderr or exc.stdout or "").strip()
+                            self.run_error = details or (
+                                "Results commit failed with exit code "
+                                f"{exc.returncode}"
+                            )
+                        except OSError as exc:
+                            self.run_error = f"Unable to run Results commit helper: {exc}"
                     try:
                         self.root.after(0, self.finished, generation)
                     except tk.TclError:
