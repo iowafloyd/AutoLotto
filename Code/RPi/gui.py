@@ -248,7 +248,7 @@ class AutoLottoApp:
             self.status_text.set(f"Status: {message}")
 
     # Restore the start state after a worker run completes.
-    def finished(self, generation):
+    def finished(self, generation, completion_status=None):
         if generation != self.run_generation:
             return
         if self.close_requested:
@@ -257,6 +257,8 @@ class AutoLottoApp:
         self.start_button.config(text="▶  START", command=self.start_program, state="normal", fg=self.icon_green, bg=self.dark_button)
         if self.run_error:
             self.status_text.set(f"Status: Error: {self.run_error}")
+        elif completion_status:
+            self.status_text.set(f"Status: {completion_status}")
         else:
             self.status_text.set("Status: Ready")
 
@@ -264,6 +266,7 @@ class AutoLottoApp:
     def run_program(self, stop_event, generation):
         reason = None
         runtime_completed = False
+        completion_status = None
         cycle_number = 0
         start_time = time.time()
         self.run_start_time = start_time
@@ -314,14 +317,16 @@ class AutoLottoApp:
                 finally:
                     if runtime_completed and self.run_error is None:
                         try:
-                            self.update_status("Committing results", generation)
+                            self.update_status("Committing", generation)
                             helper_path = Path(__file__).with_name("commit_results.py")
-                            subprocess.run(
+                            result = subprocess.run(
                                 [sys.executable, str(helper_path)],
                                 check=True,
                                 capture_output=True,
                                 text=True,
                             )
+                            if "COMMIT_COMPLETE" in result.stdout.splitlines():
+                                completion_status = "Commit complete"
                         except subprocess.CalledProcessError as exc:
                             details = (exc.stderr or exc.stdout or "").strip()
                             self.run_error = details or (
@@ -331,7 +336,9 @@ class AutoLottoApp:
                         except OSError as exc:
                             self.run_error = f"Unable to run Results commit helper: {exc}"
                     try:
-                        self.root.after(0, self.finished, generation)
+                        self.root.after(
+                            0, self.finished, generation, completion_status
+                        )
                     except tk.TclError:
                         pass
 

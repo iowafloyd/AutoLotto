@@ -32,5 +32,10 @@ def commit_results(repo_root=REPO_ROOT):
     return True
 
 
+def main():
+    if commit_results():
+        print("COMMIT_COMPLETE")
+
+
 if __name__ == "__main__":
-    commit_results()
+    main()

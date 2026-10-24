@@ -1,9 +1,12 @@
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
-from Code.RPi.commit_results import commit_results
+from Code.RPi.commit_results import commit_results, main
 
 
 class CommitResultsTests(unittest.TestCase):
@@ -48,6 +51,19 @@ class CommitResultsTests(unittest.TestCase):
                 "M README.md",
             )
             self.assertFalse(commit_results(repo_root))
+
+    def test_main_reports_only_a_created_commit(self):
+        output = StringIO()
+        with patch("Code.RPi.commit_results.commit_results", return_value=True):
+            with redirect_stdout(output):
+                main()
+        self.assertEqual(output.getvalue().strip(), "COMMIT_COMPLETE")
+
+        output = StringIO()
+        with patch("Code.RPi.commit_results.commit_results", return_value=False):
+            with redirect_stdout(output):
+                main()
+        self.assertEqual(output.getvalue(), "")
 
     @staticmethod
     def _git(cwd, *args):

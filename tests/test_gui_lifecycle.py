@@ -28,9 +28,15 @@ class GuiLifecycleTests(unittest.TestCase):
         ), patch("gui.filter_latest_results"), patch(
             "gui.subprocess.run"
         ) as run_helper:
+            run_helper.return_value.stdout = "COMMIT_COMPLETE\n"
             app.run_program(stop_event, 1)
 
         self.assertEqual(run_helper.call_count, 1)
+        app.update_status.assert_any_call("Committing", 1)
+        self.assertEqual(
+            app.root.after.call_args.args[2:],
+            (1, "Commit complete"),
+        )
         self.assertEqual(
             run_helper.call_args.args[0][1],
             str(Path(__file__).resolve().parents[1] / "Code" / "RPi" / "commit_results.py"),
